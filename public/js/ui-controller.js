@@ -66,37 +66,41 @@ export class UIController {
             });
         });
         
-        // --- Gain Control (New Input + Buttons) ---
+        // --- Gain Control (Hybrid UI) ---
         const gainInput = document.getElementById('gainInput');
+        const gainSlider = document.getElementById('gainSlider');
         const gainUpBtn = document.getElementById('gainUpBtn');
         const gainDownBtn = document.getElementById('gainDownBtn');
         const agcBtn = document.getElementById('agcBtn');
 
-        // Input Change
-        gainInput.addEventListener('change', (e) => {
-            let val = parseFloat(e.target.value);
-            if (isNaN(val)) val = 0.0;
-            // 数値からゲイン倍率へ変換: 10^(dB/20)
+        const updateGain = (db) => {
+            const val = parseFloat(db);
+            if (isNaN(val)) return;
+            gainInput.value = val.toFixed(1);
+            gainSlider.value = val;
             const gain = Math.pow(10, val / 20);
             this.app.setGain(gain);
-        });
+        };
+
+        // Text Input
+        gainInput.addEventListener('change', (e) => updateGain(e.target.value));
+
+        // Slider Input
+        gainSlider.addEventListener('input', (e) => updateGain(e.target.value));
+        
+        // Slider Double Click (Reset)
+        gainSlider.addEventListener('dblclick', () => updateGain(0.0));
 
         // Up Button
         gainUpBtn.addEventListener('click', () => {
-            let currentDb = parseFloat(gainInput.value) || 0;
-            const newDb = currentDb + 1.0;
-            gainInput.value = newDb.toFixed(1);
-            const gain = Math.pow(10, newDb / 20);
-            this.app.setGain(gain);
+            let current = parseFloat(gainInput.value) || 0;
+            updateGain(current + 0.5);
         });
 
         // Down Button
         gainDownBtn.addEventListener('click', () => {
-            let currentDb = parseFloat(gainInput.value) || 0;
-            const newDb = currentDb - 1.0;
-            gainInput.value = newDb.toFixed(1);
-            const gain = Math.pow(10, newDb / 20);
-            this.app.setGain(gain);
+            let current = parseFloat(gainInput.value) || 0;
+            updateGain(current - 0.5);
         });
 
         // AGC Toggle
@@ -107,15 +111,37 @@ export class UIController {
             this.app.setAgcEnabled(this.agcEnabled);
         });
         
-        // ピークホールドトグル
-        document.getElementById('peakHoldToggle').addEventListener('change', (e) => {
-            this.app.setShowPeakHold(e.target.checked);
+        // Settings Panel / Peak Mode
+        document.getElementById('settingsBtn').addEventListener('click', () => {
+            document.getElementById('settingsPanel').classList.remove('hidden');
         });
+
+        document.getElementById('closeSettingsBtn').addEventListener('click', () => {
+            document.getElementById('settingsPanel').classList.add('hidden');
+        });
+
+        // Window Function
+        document.getElementById('windowFunctionSelect').addEventListener('change', (e) => {
+            this.app.setWindowType(e.target.value);
+        });
+
+        // Peak Hold Mode (Toggleは廃止されSelectへ、しかしToggleがまだ残ってる場合は互換維持)
+        // 今回の要件ではSelectが主。ToggleはUIから消えた（CSS/HTMLで置換済み）が、
+        // 古いResetボタンなどがまだあるかもしれない。
         
-        // ピークリセット
-        document.getElementById('resetPeakBtn').addEventListener('click', () => {
-            this.app.resetPeakHold();
+        // Reset Peak (Main + Settings Panel)
+        const resetBtns = document.querySelectorAll('#resetPeakBtn');
+        resetBtns.forEach(btn => {
+            btn.addEventListener('click', () => this.app.resetPeakHold());
         });
+
+        // Peak Mode Select
+        const peakModeSelect = document.getElementById('peakModeSelect');
+        if (peakModeSelect) {
+             peakModeSelect.addEventListener('change', (e) => {
+                 this.app.setPeakHoldMode(e.target.value);
+             });
+        }
         
         // --- Canvas Interaction (Touch & Drag) ---
         // マウス
@@ -263,11 +289,13 @@ export class UIController {
     // Gain表示の更新（外部から呼ばれる場合やAGCによる自動更新反映用）
     updateGainDisplay(gain) {
         const input = document.getElementById('gainInput');
+        const slider = document.getElementById('gainSlider');
         // Gain倍率 -> dB
         const db = 20 * Math.log10(gain);
         // 入力中じゃなければ更新
-        if (document.activeElement !== input) {
+        if (document.activeElement !== input && document.activeElement !== slider) {
             input.value = db.toFixed(1);
+            slider.value = db; // Sliderも更新
         }
     }
     
@@ -298,6 +326,7 @@ export class UIController {
     
     handleWheel(e) {
         e.preventDefault();
+        // 感度調整済み
         const delta = e.deltaY > 0 ? 0.9 : 1.1;
         this.currentZoom *= delta;
         this.app.setZoom(this.currentZoom);

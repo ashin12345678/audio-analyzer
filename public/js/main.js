@@ -10,10 +10,20 @@ import { UIController } from "./ui-controller.js";
 class SimpleFFT {
     constructor(size) {
         this.size = size;
+        this.windowType = 'rectangular';
+        this.windowTable = new Float32Array(size).fill(1.0);
+        this.acGain = 1.0; // 振幅補正係数（リニア倍率）
+
         this.reverseTable = new Uint32Array(size);
         this.sinTable = new Float32Array(size);
         this.cosTable = new Float32Array(size);
+        
+        this.initTables();
+        this.setWindowType('hanning'); // Default
+    }
 
+    initTables() {
+        const size = this.size;
         let limit = 1;
         let bit = size >> 1;
         while (limit < size) {
@@ -27,6 +37,36 @@ class SimpleFFT {
         for (let i = 0; i < size; i++) {
             this.sinTable[i] = Math.sin(-Math.PI / i);
             this.cosTable[i] = Math.cos(-Math.PI / i);
+        }
+    }
+
+    setWindowType(type) {
+        this.windowType = type;
+        const n = this.size;
+        
+        if (type === 'hanning') {
+            // Hanning Window
+            // w(n) = 0.5 - 0.5 * cos(2*PI*n / (N-1))
+            // AC Gain (Amplitude Correction) ≈ 2.0 (+6.02dB)
+            this.acGain = 2.0; 
+            for(let i=0; i<n; i++) {
+                this.windowTable[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (n - 1)));
+            }
+        } else if (type === 'blackman') {
+            // Blackman-Harris (approx) or Standard Blackman
+            // Standard Blackman: w(n) = 0.42 - 0.5*cos(...) + 0.08*cos(...)
+            // AC Gain ≈ 2.38 (+7.53dB)
+            this.acGain = 2.38;
+            for(let i=0; i<n; i++) {
+                const a0 = 0.42, a1 = 0.5, a2 = 0.08;
+                const phase = (2 * Math.PI * i) / (n - 1);
+                this.windowTable[i] = a0 - a1 * Math.cos(phase) + a2 * Math.cos(2 * phase);
+            }
+        } else {
+            // Rectangular (None)
+            // AC Gain = 1.0 (0dB)
+            this.acGain = 1.0;
+            this.windowTable.fill(1.0);
         }
     }
 
@@ -113,7 +153,10 @@ class AudioAnalyzerApp {
     this.binCount = 1024;
     this.sampleRate = 48000;
     this.sampleRate = 48000;
+    this.sampleRate = 48000;
     this.fftSize = 2048;
+    this.windowType = 'hanning'; // rectangular, hanning, blackman
+    this.peakHoldMode = 'decay'; // decay, hold, off
     this.initialGain = 1.0;
     
     // AGC設定
@@ -247,6 +290,15 @@ class AudioAnalyzerApp {
   setAgcEnabled(enabled) {
       this.agcEnabled = enabled;
       this.log(`AGC: ${enabled ? 'ON' : 'OFF'}`, 'info');
+  }
+
+  setWindowType(type) {
+      this.windowType = type;
+      // FFTインスタンスがあれば窓関数を再生成
+      if (this.fft) {
+          this.fft.setWindowType(type);
+      }
+      this.log(`Window: ${type}`, 'info');
   }
 
   // 自動ゲイン制御ロジック
@@ -747,6 +799,8 @@ class AudioAnalyzerApp {
     // FFT解析 (JS実装)
     if (!this.fft) {
         this.fft = new SimpleFFT(this.fftSize);
+        // 初期窓設定
+        this.fft.setWindowType(this.windowType);
     }
 
     // ウィンドウ関数適用とデータセット
@@ -756,11 +810,11 @@ class AudioAnalyzerApp {
     // 最新のデータを取得（最後尾から）
     const offset = Math.max(0, pcmData.length - this.fftSize);
     
+    // 窓関数適用
+    const windowFunc = this.fft.windowTable;
     for (let i = 0; i < this.fftSize; i++) {
         if (i < len) {
-            // Hann Window
-            const window = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (this.fftSize - 1)));
-            inputData[i] = pcmData[offset + i] * window;
+            inputData[i] = pcmData[offset + i] * windowFunc[i];
         } else {
             inputData[i] = 0;
         }
@@ -768,6 +822,14 @@ class AudioAnalyzerApp {
 
     // FFT実行 (magnitudes取得)
     const fftMags = this.fft.calculateSpectrum(inputData);
+
+    // 振幅補正 (Amplitude Correction)
+    // 窓関数を掛けるとエネルギーが減るので補正する
+    // Rect=0dB, Hann=+6.02dB, Blackman=+7.5dB 程度
+    // SimpleFFT側で補正係数を持っている
+    const acGain = this.fft.acGain;
+
+    // スムージング係数 (0.0=即時反映, 1.0=変化なし)
 
     // スムージング係数 (0.0=即時反映, 1.0=変化なし)
     // 点滅を防ぐために少し強めにかける
@@ -783,7 +845,8 @@ class AudioAnalyzerApp {
         if (!Number.isFinite(mag)) mag = 0;
         
         // dB変換 (log10(0)対策も含める)
-        let db = 20 * Math.log10(mag + 1e-10);
+        // ここで振幅補正(acGain)も適用する
+        let db = 20 * Math.log10(mag * acGain + 1e-10);
         
         // ゲイン適用 (Soft Gain)
         const currentGain = this.gainNode ? this.gainNode.gain.value : 1.0;
@@ -801,21 +864,27 @@ class AudioAnalyzerApp {
 
         this.magnitudes[i] = currentVal * smoothing + db * (1 - smoothing);
         
-        // Peak Hold更新
-        // バグ修正: いきなり下がるときにPeakが残るように
-        // Peakは常に減衰(Decay)させることで、「リセットされない」問題と「落ちすぎる」問題を両立
-        
-        let currentPeak = this.peakHold[i];
-        if (!Number.isFinite(currentPeak)) currentPeak = -100;
-
-        if (this.magnitudes[i] > currentPeak) {
-            this.peakHold[i] = this.magnitudes[i];
-        } else {
-             // ゆらぎを持たせて自然に減衰 (-60dB/secくらい)
-             // 60FPS想定で 1フレームあたり -0.5dB
-             this.peakHold[i] = currentPeak - 0.5;
-        }
+             // Peak Hold更新
+             this.updatePeakHold(i, this.magnitudes[i]);
+         }
     }
+
+
+  // Peak Hold更新ロジック（共通化）
+  updatePeakHold(index, currentMag) {
+      if (this.peakHoldMode === 'off') return;
+
+      let currentPeak = this.peakHold[index];
+      if (!Number.isFinite(currentPeak)) currentPeak = -100;
+
+      if (currentMag > currentPeak) {
+          this.peakHold[index] = currentMag;
+      } else if (this.peakHoldMode === 'decay') {
+           // Auto Decay (3秒程度で減衰)
+           // 60FPS: -0.5dB/frame -> 30dB/sec -> 3secで90dB減衰 (ちょうどいい)
+           this.peakHold[index] = currentPeak - 0.5;
+      }
+      // 'hold' modeの場合は減衰させない（維持）
   }
 
   processAnalyserData() {
@@ -844,8 +913,8 @@ class AudioAnalyzerApp {
       const db = normalized > 0 ? 20 * Math.log10(normalized) : -100;
       this.magnitudes[i] = Math.max(-100, Math.min(0, db));
       
-      if (this.magnitudes[i] > this.peakHold[i]) {
-        this.peakHold[i] = this.magnitudes[i];
+      if (this.peakHoldMode !== 'off') {
+          this.updatePeakHold(i, this.magnitudes[i]);
       }
     }
     
@@ -914,9 +983,22 @@ class AudioAnalyzerApp {
   resetPeakHold() {
     if (this.wasmReady && this.wasmModule) {
       this.wasmModule._reset_peak_hold();
-    } else if (this.peakHold) {
+    } // wasmModuleがない場合でもJS側配列はリセットする（下へ続く）
+    
+    if (this.peakHold) {
       this.peakHold.fill(-100);
     }
+  }
+
+  setPeakHoldMode(mode) {
+      this.peakHoldMode = mode;
+      this.log(`Peak Hold: ${mode}`, 'info');
+      
+      if (mode === 'off') {
+          this.setShowPeakHold(false);
+      } else {
+          this.setShowPeakHold(true);
+      }
   }
 
   setZoom(zoom) {
@@ -940,4 +1022,25 @@ class AudioAnalyzerApp {
 // アプリケーション起動
 window.addEventListener("DOMContentLoaded", () => {
   window.app = new AudioAnalyzerApp();
+
+  // PWA Service Worker Registration
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js')
+      .then(reg => console.log('SW registred', reg))
+      .catch(err => console.error('SW registration failed', err));
+  }
+  
+  // AudioContext Auto Resume (Mobile Safari/Chrome fix)
+  const resumeAudio = () => {
+      const app = window.app;
+      if (app && app.audioContext && app.audioContext.state === 'suspended') {
+          app.audioContext.resume().then(() => {
+              console.log('AudioContext resumed via user interaction');
+          });
+      }
+  };
+  
+  document.addEventListener('click', resumeAudio);
+  document.addEventListener('touchstart', resumeAudio);
+  document.addEventListener('keydown', resumeAudio);
 });

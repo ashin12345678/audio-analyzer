@@ -353,18 +353,21 @@ export class Visualizer {
     const width = Math.floor(this.width);
     const height = Math.floor(this.height - this.paddingBottom);
 
-    // 既存データを1行下にシフト
-    const dataWidth = this.spectrogramData.width;
+    // 高速化: copyWithinを使ってメモリ内でシフト
+    // 下から上へ、あるいは上から下へ。
+    // ここでは新しいデータが y=0 (上) に書き込まれ、古いデータは下へ流れる (y+1) とする。
     
-    for (let y = height - 1; y > 0; y--) {
-      for (let x = 0; x < width; x++) {
-        const srcIdx = ((y - 1) * dataWidth + x) * 4;
-        const dstIdx = (y * dataWidth + x) * 4;
-        this.spectrogramData.data[dstIdx] = this.spectrogramData.data[srcIdx];
-        this.spectrogramData.data[dstIdx + 1] = this.spectrogramData.data[srcIdx + 1];
-        this.spectrogramData.data[dstIdx + 2] = this.spectrogramData.data[srcIdx + 2];
-      }
-    }
+    // 全体を1行分下へコピー (0行目〜height-2行目 を 1行目〜height-1行目 へ)
+    // copyWithin(target, start, end)
+    // target: コピー先開始インデックス (1行目 = width * 4)
+    // start: コピー元開始インデックス (0)
+    // end: コピー元終了インデックス (全サイズ - 1行分)
+    
+    const rowSize = width * 4;
+    const totalSize = this.spectrogramData.data.length;
+    
+    // Uint8ClampedArray.copyWithin は高速
+    this.spectrogramData.data.copyWithin(rowSize, 0, totalSize - rowSize);
 
     // 新しい行を描画 (y=0)
     for (let x = 0; x < width; x++) {
@@ -430,22 +433,43 @@ export class Visualizer {
     }
 
     this.ctx.beginPath();
+    let lastX = -100;
+
     for (const freq of freqs) {
       if (freq < this.minFreq || freq > this.maxFreq) continue;
 
       const x = this.freqToX(freq, 1);
-
-      this.ctx.moveTo(x, 0);
-      this.ctx.lineTo(x, bottomY); // グラフ領域の下端まで
       
-      // 横軸ラベル（パディング領域に表示）
-      let label;
-      if (freq >= 1000) {
-        label = (freq / 1000) + "k";
-      } else {
-        label = freq;
+      // グリッド線
+      this.ctx.moveTo(x, 0);
+      this.ctx.lineTo(x, bottomY); 
+
+      // ラベル表示（衝突回避）
+      // 主要周波数は優先表示
+      const isMajor = (freq === 100 || freq === 1000 || freq === 10000);
+      
+      if (x - lastX > 30 || isMajor) {
+          let label;
+          if (freq >= 1000) {
+            label = (freq / 1000) + "k";
+          } else {
+            label = freq;
+          }
+          
+          if (isMajor) {
+              this.ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
+              this.ctx.font = "bold 12px 'Inter', sans-serif";
+          } else {
+              this.ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
+              this.ctx.font = "11px 'Inter', sans-serif";
+          }
+
+          this.ctx.fillText(label, x, bottomY + 15);
+          lastX = x;
+          
+          // Reset style
+          this.ctx.fillStyle = "rgba(255, 255, 255, 0.7)";
       }
-      this.ctx.fillText(label, x, bottomY + 15); // パディングの中央あたり
     }
     this.ctx.stroke();
 

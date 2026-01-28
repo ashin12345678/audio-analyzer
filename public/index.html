@@ -16,6 +16,7 @@
       content="高性能WebAssemblyベースのリアルタイム音声スペクトラムアナライザー"
     />
     <link rel="stylesheet" href="css/styles.css" />
+    <link rel="manifest" href="manifest.json" />
   </head>
   <body>
     <div id="app">
@@ -71,7 +72,7 @@
 
           <!-- 右サイドコントロール -->
           <div class="control-group right">
-            <!-- ゲインコントロール (数値入力 + AGC) -->
+            <!-- ゲインコントロール (ハイブリッドUI) -->
             <div class="gain-control-group">
               <div class="gain-label-row">
                 <label>GAIN (dB)</label>
@@ -79,21 +80,48 @@
               </div>
               <div class="gain-inputs">
                 <button id="gainDownBtn" class="gain-btn">-</button>
-                <input type="number" id="gainInput" value="0.0" step="1.0" class="gain-number-input">
+                <input type="number" id="gainInput" value="0.0" step="0.5" class="gain-number-input">
                 <button id="gainUpBtn" class="gain-btn">+</button>
+              </div>
+              <!-- スライダー復活 -->
+              <div class="gain-slider-container">
+                <input type="range" id="gainSlider" min="-20" max="20" step="0.5" value="0" />
               </div>
             </div>
 
-            <!-- ピークホールド -->
-            <div class="peak-control">
-              <label class="toggle">
-                <input type="checkbox" id="peakHoldToggle" checked />
-                <span class="toggle-slider"></span>
-                <span class="toggle-label">PEAK</span>
-              </label>
-              <button id="resetPeakBtn" class="btn btn-small">RESET</button>
-            </div>
+            <!-- 詳細設定ポップオーバー (ボタン) -->
+            <button id="settingsBtn" class="btn btn-secondary btn-icon-only" title="Settings">
+               <span>⚙️</span>
+            </button>
           </div>
+        </div>
+
+        <!-- 詳細設定パネル (オーバーレイ) -->
+        <div id="settingsPanel" class="settings-panel hidden">
+            <div class="settings-content">
+               <h3>Analyzer Settings</h3>
+               
+               <div class="setting-item">
+                 <label>Window Function</label>
+                 <select id="windowFunctionSelect">
+                   <option value="hanning" selected>Hanning (Standard)</option>
+                   <option value="blackman">Blackman-Harris (High Res)</option>
+                   <option value="rectangular">Rectangular (None)</option>
+                 </select>
+               </div>
+
+               <div class="setting-item">
+                 <label>Peak Hold Mode</label>
+                 <select id="peakModeSelect">
+                   <option value="decay" selected>Auto Decay (3s)</option>
+                   <option value="hold">Infinity Hold</option>
+                   <option value="off">Off</option>
+                 </select>
+                 <button id="resetPeakBtn" class="btn btn-small">RESET NOW</button>
+               </div>
+               
+               <button id="closeSettingsBtn" class="btn btn-primary full-width">CLOSE</button>
+            </div>
         </div>
       </div>
 
