@@ -455,6 +455,18 @@ body {
   border-bottom: 1px solid rgba(255,255,255,0.1);
 }
 
+.debug-checkbox-row {
+  margin-top: 6px;
+  color: var(--text-secondary);
+  font-size: 10px;
+  display: flex;
+  align-items: center;
+}
+
+.debug-checkbox-row input {
+  margin-right: 6px;
+}
+
 .debug-select {
   width: 100%;
   background: var(--bg-secondary);

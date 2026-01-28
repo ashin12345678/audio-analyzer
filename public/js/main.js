@@ -85,6 +85,14 @@ class AudioAnalyzerApp {
     document.getElementById('testToneBtn').addEventListener('click', () => {
       this.toggleTestTone();
     });
+    
+    // Raw Modeトグル
+    document.getElementById('rawModeToggle').addEventListener('change', () => {
+      if (this.isRunning) {
+        this.stop();
+        setTimeout(() => this.start(), 500);
+      }
+    });
   }
   
   toggleTestTone() {
@@ -243,22 +251,48 @@ class AudioAnalyzerApp {
       
       // マイクデバイスの選択
       const audioSource = document.getElementById('audioSourceSelect').value;
+      const rawMode = document.getElementById('rawModeToggle').checked;
       
-      // マイクアクセス取得（制約を極力なくす）
-      // Androidでは echoCancellation などの指定がトラブルの元になることがある
-      const constraints = {
-        audio: audioSource ? { deviceId: { exact: audioSource } } : true
-      };
+      // マイクアクセス取得
+      let constraints = { audio: true };
       
-      this.log(`Requesting mic (deviceId: ${audioSource ? audioSource : 'default'})...`, 'info');
+      if (rawMode) {
+        // Raw Mode: 処理を極力無効化
+        this.log('Raw Mode: Disabling all processing', 'warn');
+        constraints = {
+          audio: {
+            deviceId: audioSource ? { exact: audioSource } : undefined,
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false,
+            googEchoCancellation: false,
+            googAutoGainControl: false,
+            googNoiseSuppression: false,
+            googHighpassFilter: false
+          }
+        };
+      } else {
+        // 通常モード
+        constraints = {
+          audio: audioSource ? { deviceId: { exact: audioSource } } : true
+        };
+      }
+      
+      this.log(`Requesting mic (raw:${rawMode}, id:${audioSource || 'def'})...`, 'info');
       
       try {
         this.mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
         this.log('Microphone access granted!', 'success');
+        
+        // 実際の制約を確認
+        const track = this.mediaStream.getAudioTracks()[0];
+        const settings = track.getSettings();
+        this.log(`Actual settings: echo:${settings.echoCancellation}, noise:${settings.noiseSuppression}`, 'info');
+        
       } catch (err) {
         // 特定のデバイスで失敗した場合はデフォルトで再試行
-        if (audioSource) {
-           this.log(`Specific device failed (${err.message}), trying default...`, 'warn');
+        if (audioSource || rawMode) {
+           this.log(`Specific constraint failed (${err.message}), trying default...`, 'warn');
            this.mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
            this.log('Default mic fallback granted!', 'success');
         } else {
