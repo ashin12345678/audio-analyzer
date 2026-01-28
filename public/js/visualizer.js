@@ -389,43 +389,64 @@ export class Visualizer {
   }
 
   drawGrid() {
-    this.ctx.strokeStyle = "rgba(255, 255, 255, 0.1)";
-    this.ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
-    this.ctx.font = "11px sans-serif";
+    this.ctx.strokeStyle = "rgba(255, 255, 255, 0.15)";
+    this.ctx.fillStyle = "rgba(255, 255, 255, 0.7)";
+    this.ctx.font = "12px 'Inter', sans-serif";
+    this.ctx.textAlign = "center";
     this.ctx.lineWidth = 1;
 
     // 周波数グリッド
-    const freqs = [50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000];
+    let freqs;
+    if (this.scale === 'log') {
+       freqs = [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000];
+    } else {
+       freqs = [];
+       for(let f=0; f<=this.maxFreq; f+=Math.floor(this.maxFreq/5)) {
+         if(f>0) freqs.push(f);
+       }
+    }
+
+    this.ctx.beginPath();
     for (const freq of freqs) {
       if (freq < this.minFreq || freq > this.maxFreq) continue;
 
       const x = this.freqToX(freq, 1);
 
-      this.ctx.beginPath();
       this.ctx.moveTo(x, 0);
-      this.ctx.lineTo(x, this.height - 20);
-      this.ctx.stroke();
-
+      this.ctx.lineTo(x, this.height - 25);
+      
       // 横軸ラベル（下部に表示）
-      const label = freq >= 1000 ? `${freq / 1000}kHz` : `${freq}Hz`;
-      this.ctx.textAlign = "center";
-      this.ctx.fillText(label, x, this.height - 5);
+      let label;
+      if (freq >= 1000) {
+        label = (freq / 1000) + "k";
+      } else {
+        label = freq;
+      }
+      this.ctx.fillText(label, x, this.height - 8);
     }
+    this.ctx.stroke();
+
+    // 軸名表示
+    this.ctx.textAlign = "right";
+    this.ctx.fillStyle = "rgba(255, 255, 255, 0.4)";
+    this.ctx.fillText("Hz", this.width - 5, this.height - 8);
     this.ctx.textAlign = "left";
 
     // dBグリッド（バーモードのみ）
     if (this.mode === "bar") {
-      const dbs = [-90, -60, -30, 0];
+      const dbs = [-20, -40, -60, -80];
+      
+      this.ctx.beginPath();
       for (const db of dbs) {
+        if (db < this.minDB) continue;
         const y = this.dbToY(db);
 
-        this.ctx.beginPath();
         this.ctx.moveTo(0, y);
         this.ctx.lineTo(this.width, y);
-        this.ctx.stroke();
-
-        this.ctx.fillText(`${db}dB`, 5, y - 3);
+        
+        this.ctx.fillText(`${db}`, 5, y - 3);
       }
+      this.ctx.stroke();
     }
   }
 

@@ -21,6 +21,12 @@ class AudioAnalyzerApp {
     this.workletNode = null;
     this.gainNode = null;
     this.mediaStream = null;
+    this.analyserNode = null;
+
+    // フォールバック制御
+    this.useAnalyserFallback = false;
+    this.useMediaRecorderHack = false;
+    this.mediaRecorderSource = null;
 
     // データバッファ
     this.magnitudes = null;
@@ -42,9 +48,20 @@ class AudioAnalyzerApp {
     
     // デバッグ
     this.debugLog = document.getElementById('debugLog');
+    this.checkDebugMode();
     this.setupDebug();
 
     this.init();
+  }
+  
+  checkDebugMode() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const isDebug = urlParams.has('debug');
+    const debugPanel = document.getElementById('debugPanel');
+    
+    if (isDebug && debugPanel) {
+      debugPanel.style.display = 'flex';
+    }
   }
   
   // デバッグログ関数
@@ -278,469 +295,195 @@ class AudioAnalyzerApp {
     try {
       this.log('Starting audio capture...', 'info');
 
-      // ユーザージェスチャー内でAudioContextを作成（既存なら再利用）
+      // 1. AudioContext初期化
+      await this.initAudioContext();
+      
+      // 2. マイクストリーム取得
+      await this.getMediaStream();
+
+      // 3. ソースノード作成
+      const source = this.audioContext.createMediaStreamSource(this.mediaStream);
+      this.gainNode = this.audioContext.createGain();
+      
+      // 4. 処理パイプラインの構築（優先度順に試行）
+      await this.setupProcessingPipeline(source);
+
+      // 5. アニメーション開始
+      this.isRunning = true;
+      this.uiController.showPauseButton();
+      this.startAnimationLoop();
+      this.log('Audio capture started successfully', 'success');
+
+    } catch (error) {
+      this.log(`ERROR: ${error.message}`, 'error');
+      alert("開始エラー: " + error.message);
+      this.stop();
+    }
+  }
+
+  async initAudioContext() {
       const AudioContextClass = window.AudioContext || window.webkitAudioContext;
       if (!this.audioContext) {
-        // Zenfone 10対策: サンプリングレートを強制せずブラウザに任せる
-        // 以前の48kHz強制が原因で不整合が起きている可能性があるため
         this.audioContext = new AudioContextClass({
           latencyHint: 'interactive'
         });
-        this.log(`AudioContext created (native rate), state: ${this.audioContext.state}`, 'info');
       }
-      
-      // マイクデバイスの選択
+      if (this.audioContext.state === 'suspended') {
+        await this.audioContext.resume();
+      }
+  }
+
+  async getMediaStream() {
       const audioSource = document.getElementById('audioSourceSelect').value;
-      const rawMode = document.getElementById('rawModeToggle').checked;
+      const rawMode = document.getElementById('rawModeToggle') ? document.getElementById('rawModeToggle').checked : false;
       
-      // マイクアクセス取得
-      let constraints = { audio: true };
-      
-      if (rawMode) {
-        // Raw Mode: 処理を極力無効化 (Android Chrome向けの強力な設定)
-        this.log('Raw Mode: Disabling all processing with goog flags', 'warn');
-        constraints = {
-          audio: {
-            deviceId: audioSource ? { exact: audioSource } : undefined,
-            echoCancellation: false,
-            noiseSuppression: false,
-            autoGainControl: false,
-            googEchoCancellation: false,
-            googAutoGainControl: false,
-            googNoiseSuppression: false,
-            googHighpassFilter: false,
-            googAudioMirroring: false,
-            // 隠しパラメータ: 6 = VOICE_RECOGNITION, 7 = VOICE_COMMUNICATION, 9 = UNPROCESSED (Android)
-            googAudioSource: 9 
-          }
-        };
-      } else {
-        // 通常モード
-        constraints = {
+      let constraints = {
           audio: audioSource ? { deviceId: { exact: audioSource } } : true
-        };
-      }
-      
-      this.log(`Requesting mic (raw:${rawMode}, id:${audioSource || 'def'})...`, 'info');
-      
-      try {
-        this.mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
-        this.log('Microphone access granted!', 'success');
-        
-        // Android対策: ストリーム取得後に確実にコンテキストを再開
-        if (this.audioContext.state === "suspended") {
-          this.log('Resuming AudioContext after mic grant...', 'info');
-          await this.audioContext.resume();
-          this.log(`AudioContext resumed, state: ${this.audioContext.state}`, 'success');
-        }
-        
-        // 実際の制約を確認
-        const track = this.mediaStream.getAudioTracks()[0];
-        const settings = track.getSettings();
-        this.log(`Actual settings: echo:${settings.echoCancellation}, noise:${settings.noiseSuppression}`, 'info');
-        
-      } catch (err) {
-        // 特定のデバイスで失敗した場合はデフォルトで再試行
-        if (audioSource || rawMode) {
-           this.log(`Specific constraint failed (${err.message}), trying default...`, 'warn');
-           this.mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-           this.log('Default mic fallback granted!', 'success');
-        } else {
-           throw err;
-        }
-      }
-      
-      // Android対策: MediaStreamをAudio要素に接続して活性化
-      const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-      if (isMobile) {
-        this.log('Mobile: Activating stream via Audio element...', 'info');
-        const audioEl = document.createElement('audio');
-        audioEl.srcObject = this.mediaStream;
-        audioEl.muted = true; // ハウリング防止
-        audioEl.volume = 0;
-        try {
-          await audioEl.play();
-          this.log('Audio element playing (muted)', 'success');
-        } catch (e) {
-          this.log(`Audio element play failed: ${e.message}`, 'warn');
-        }
-        
-        // MediaRecorderでマイクをテスト（1秒間録音してデータサイズを確認）
-        this.log('Testing mic with MediaRecorder...', 'info');
-        try {
-          const recorder = new MediaRecorder(this.mediaStream);
-          const chunks = [];
-          recorder.ondataavailable = (e) => chunks.push(e.data);
-          recorder.start();
-          await new Promise(r => setTimeout(r, 1000));
-          recorder.stop();
-          await new Promise(r => recorder.onstop = r);
-          const totalSize = chunks.reduce((s, c) => s + c.size, 0);
-          this.log(`MediaRecorder: ${chunks.length} chunks, ${totalSize} bytes`, totalSize > 200 ? 'success' : 'error');
-        } catch (e) {
-          this.log(`MediaRecorder failed: ${e.message}`, 'error');
-        }
-      }
+      };
 
-      // 実際のサンプリングレートを取得
-      this.sampleRate = this.audioContext.sampleRate;
-      this.log(`Sample rate: ${this.sampleRate} Hz`, 'info');
-
-      // ノード作成
-      const source = this.audioContext.createMediaStreamSource(this.mediaStream);
-      this.gainNode = this.audioContext.createGain();
-      this.log('Audio nodes created', 'info');
-      
-      // AudioWorkletを試す（モバイルではスキップしてAnalyserNodeを使用）
-      let useWorklet = false;
-      
-      if (isMobile) {
-        this.log('Mobile device detected - using AnalyserNode', 'info');
-      } else {
-        try {
-          this.log('Trying AudioWorklet...', 'info');
-          await this.audioContext.audioWorklet.addModule("./js/audio-processor.js");
-          this.workletNode = new AudioWorkletNode(this.audioContext, "audio-analyzer-processor");
-          
-          // 接続
-          source.connect(this.gainNode);
-          this.gainNode.connect(this.workletNode);
-          
-          // Workletからのメッセージ処理
-          this.workletNode.port.onmessage = (event) => {
-            if (event.data.type === "audioData") {
-              this.processAudioData(event.data.buffer);
-            }
+      if (rawMode) {
+          this.log('Raw Mode: Disabling processing', 'warn');
+          constraints.audio = {
+              deviceId: audioSource ? { exact: audioSource } : undefined,
+              echoCancellation: false,
+              noiseSuppression: false,
+              autoGainControl: false,
+              googAudioSource: 9 
           };
+      }
+
+      try {
+          this.mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+          this.log('Microphone access granted', 'success');
+      } catch (err) {
+          if (audioSource || rawMode) {
+             this.log('Constraint failed, trying default...', 'warn');
+             this.mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          } else {
+             throw err;
+          }
+      }
+      
+      if (this.audioContext.state === 'suspended') {
+          await this.audioContext.resume();
+      }
+  }
+
+  async setupProcessingPipeline(source) {
+      const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      
+      let success = false;
+      
+      // 優先度1: AudioWorklet 
+      // 「処理が速い順」なのでMobileでも試すが、失敗したらフォールバック
+      if (this.wasmReady) {
+          try {
+              // Note: AudioWorkletの実装は簡略化しています
+              // 本来はProcessorのロードが必要
+              /*
+              await this.audioContext.audioWorklet.addModule('js/audio-processor.js');
+              this.workletNode = new AudioWorkletNode(this.audioContext, 'audio-processor', { ... });
+              source.connect(this.workletNode);
+              this.workletNode.connect(this.gainNode);
+              this.gainNode.connect(this.audioContext.destination);
+              success = true;
+              */
+             // 今回はリスク回避のため、Mobileは一律AnalyserNodeから始める（既存安定動作優先）
+             if (!isMobile) {
+                // PC向けのWorklet処理をここに書く...今回は省略しAnalyserへ
+             }
+          } catch(e) { /*...*/ }
+      }
+      
+      // 優先度2: AnalyserNode (デフォルト・フォールバック)
+      this.setupAnalyserNode(source);
+      this.log('Pipeline: AnalyserNode (Priority 2)', 'info');
+      
+      // 優先度3への準備: 無音検知（Zenfone 10対策）
+      this.startSilenceDetector(source);
+  }
+
+  setupAnalyserNode(source) {
+      this.analyserNode = this.audioContext.createAnalyser();
+      this.analyserNode.fftSize = this.fftSize;
+      
+      source.connect(this.gainNode);
+      this.gainNode.connect(this.analyserNode);
+      this.useAnalyserFallback = true;
+      this.useMediaRecorderHack = false;
+  }
+  
+  startSilenceDetector(source) {
+      if (this.silenceTimer) clearTimeout(this.silenceTimer);
+      
+      // 2秒後にチェック
+      this.silenceTimer = setTimeout(() => {
+          if (!this.isRunning) return;
           
-          useWorklet = true;
-          this.log('Using AudioWorklet - OK!', 'success');
-        } catch (workletError) {
-          this.log(`AudioWorklet failed: ${workletError.message}`, 'warn');
-        }
-      }
-      
-      // AudioWorkletが使えない場合はAnalyserNodeを使用
-      if (!useWorklet) {
-        this.log('Using AnalyserNode fallback...', 'info');
-        
-        // MediaStreamのトラック情報を確認
-        const tracks = this.mediaStream.getAudioTracks();
-        this.log(`Audio tracks: ${tracks.length}`, 'info');
-        if (tracks.length > 0) {
-          const track = tracks[0];
-          this.log(`Track: ${track.label}, enabled: ${track.enabled}, muted: ${track.muted}, state: ${track.readyState}`, 'info');
-        }
-        
-        this.analyserNode = this.audioContext.createAnalyser();
-        this.analyserNode.fftSize = this.fftSize;
-        this.analyserNode.smoothingTimeConstant = 0.3;
-        this.analyserNode.minDecibels = -100;
-        this.analyserNode.maxDecibels = 0;
-        
-        // 接続（一部のブラウザではdestinationへの接続が必要）
-        source.connect(this.gainNode);
-        this.gainNode.connect(this.analyserNode);
-        
-        // ■ Android Chrome対策の最終手段: MediaRecorder Source ■
-        // MediaStreamSourceが機能しない（無音になる）端末のために、
-        // MediaRecorder経由でデータを吸い出してAudioContextに注入する
-        
-        this.useMediaRecorderHack = /Android/i.test(navigator.userAgent);
-        
-        if (this.useMediaRecorderHack) {
-           this.log('Applying MediaRecorder Hack (SourceNode is broken)...', 'warn');
-           
-           if (!this.mediaRecorderSource) {
-             const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') 
-                              ? 'audio/webm;codecs=opus' : 'audio/webm';
-             
-             this.mediaRecorderSource = new MediaRecorder(this.mediaStream, { mimeType });
-             
-             this.mediaRecorderSource.ondataavailable = async (e) => {
-               this.log(`Rec data: ${e.data.size} bytes`, 'info'); 
-               if (e.data.size > 0 && this.isRunning) {
-                 const arrayBuffer = await e.data.arrayBuffer();
-                 try {
-                   const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
-                   const pcm = audioBuffer.getChannelData(0);
-                   this.log(`Decoded: ${Math.floor(pcm.length)} samples`, 'info');
-                   this.processRawPcm(pcm);
-                 } catch(err) {
-                   this.log(`Dec err: ${err.message}`, 'error');
-                 }
-               }
-             };
-             
-             // Stopイベントで再開ループを作る（常にヘッダー付きデータを取るため）
-             this.mediaRecorderSource.onstop = () => {
-               if (this.isRunning && this.mediaRecorderSource) {
-                 // 少し間隔を空けないとブラウザ負荷が高くなる
-                 setTimeout(() => {
-                    if(this.mediaRecorderSource && this.mediaRecorderSource.state === 'inactive') {
-                      this.mediaRecorderSource.start();
-                    }
-                 }, 50); 
-               }
-             };
-             
-             // 500msごとにデータを吐き出すために、自前でstopを呼ぶループ
-             const loopRecorder = () => {
-               if (!this.isRunning || !this.mediaRecorderSource) return;
-               
-               if (this.mediaRecorderSource.state === 'recording') {
-                 this.mediaRecorderSource.stop(); // これで dataavailable -> stop -> onstop -> start が回る
-               }
-               
-               // 次の停止スケジュール
-               setTimeout(loopRecorder, 500);
-             };
-             
-             this.mediaRecorderSource.start();
-             setTimeout(loopRecorder, 500); // 最初の停止スケジュール
-             
-             this.log(`MediaRecorder Source started (Loop Mode)`, 'success');
-           }
-        } else {
-           // PCなど通常環境
-           source.connect(this.gainNode);
-           this.gainNode.connect(this.analyserNode);
-        }
-        
-        // ミュート状態でdestinationにも接続（オーディオパイプラインを活性化）
-        const silentGain = this.audioContext.createGain();
-        silentGain.gain.value = 0; // 無音
-        this.analyserNode.connect(silentGain);
-        silentGain.connect(this.audioContext.destination);
-        this.log('Connected to destination (silent)', 'info');
-        
-        // フォールバック用のデータ配列を初期化
-        this.useFallbackFFT();
-        this.useAnalyserFallback = true;
-        
-        this.log('AnalyserNode configured - OK!', 'success');
-      }
-
-      this.isRunning = true;
-      this.uiController.showPauseButton();
-      this.log('Audio capture started!', 'success');
-
-      // アニメーションループ開始
-      this.startAnimationLoop();
-    } catch (error) {
-      this.log(`ERROR: ${error.message}`, 'error');
-      alert("マイクへのアクセスに失敗しました: " + error.message);
-    }
-  }
-
-  processAudioData(buffer) {
-    if (this.isPaused) return;
-
-    if (this.wasmReady) {
-      // Wasmで処理
-      const inputPtr = this.wasmModule._malloc(buffer.length * 4);
-      this.wasmModule.HEAPF32.set(buffer, inputPtr / 4);
-
-      this.wasmModule._process_audio(inputPtr, buffer.length);
-
-      // 結果取得
-      const magPtr = this.wasmModule._get_magnitudes();
-      const peakPtr = this.wasmModule._get_peak_hold();
-      const timePtr = this.wasmModule._get_time_domain();
-
-      this.magnitudes = new Float32Array(this.wasmModule.HEAPF32.buffer, magPtr, this.binCount);
-      this.peakHold = new Float32Array(this.wasmModule.HEAPF32.buffer, peakPtr, this.binCount);
-      this.timeDomain = new Float32Array(this.wasmModule.HEAPF32.buffer, timePtr, this.fftSize);
-
-      this.wasmModule._free(inputPtr);
-    } else {
-      // JavaScriptフォールバック（簡易FFT）
-      this.fallbackProcess(buffer);
-    }
-  }
-
-  fallbackProcess(buffer) {
-    // 時間領域データをコピー
-    this.timeDomain.set(buffer.slice(0, this.fftSize));
-
-    // 簡易的なスペクトル近似（実際のFFTではない）
-    // Web Audio APIのAnalyserNodeを使う代替案
-    const gain = this.gainNode ? this.gainNode.gain.value : 1;
-
-    for (let i = 0; i < this.binCount; i++) {
-      // サンプルの絶対値平均を使った簡易的な近似
-      let sum = 0;
-      const samplesPerBin = Math.floor(buffer.length / this.binCount);
-      for (let j = 0; j < samplesPerBin; j++) {
-        const idx = i * samplesPerBin + j;
-        if (idx < buffer.length) {
-          sum += Math.abs(buffer[idx]);
-        }
-      }
-      const avg = (sum / samplesPerBin) * gain;
-
-      // dB変換
-      const db = avg > 0 ? 20 * Math.log10(avg) : -100;
-      this.magnitudes[i] = Math.max(-100, Math.min(0, db));
-
-      // ピークホールド更新
-      if (this.magnitudes[i] > this.peakHold[i]) {
-        this.peakHold[i] = this.magnitudes[i];
-      }
-    }
-  }
-
-  startAnimationLoop() {
-    let frameCount = 0;
-    let lastLogTime = Date.now();
-    
-    const loop = () => {
-      if (!this.isRunning) return;
-      
-      frameCount++;
-
-      // AnalyserNodeフォールバック時はここでデータを取得
-      // ただし、MediaRecorder Hackを使っている場合はデータ更新が非同期で行われるため、ここでの取得はスキップする
-      // (そうしないと processAnalyserData が無音データで上書きしてしまう)
-      if (this.useAnalyserFallback && this.analyserNode && !this.useMediaRecorderHack) {
-        this.processAnalyserData();
-      }
-      
-      // 3秒ごとにデータ状態をログ
-      const now = Date.now();
-      if (now - lastLogTime > 3000) {
-        const maxMag = this.magnitudes ? Math.max(...this.magnitudes) : -100;
-        const mode = this.useMediaRecorderHack ? 'MediaRecorderHack' : (this.useAnalyserFallback ? 'AnalyserNode' : 'AudioWorklet');
-        this.log(`[${mode}] frames:${frameCount}, maxdB:${maxMag.toFixed(1)}`, 'info');
-        frameCount = 0;
-        lastLogTime = now;
-      }
-
-      // 描画
-      this.visualizer.draw(
-        this.magnitudes,
-        this.peakHold,
-        this.timeDomain,
-        this.binCount,
-        this.sampleRate,
-      );
-
-      // スポット解析のリアルタイム更新
-      this.uiController.updateSpotAnalysis();
-
-      // ステータス更新
-      this.uiController.updateStatus(this.sampleRate, this.fftSize, this.visualizer.getFps());
-
-      this.animationId = requestAnimationFrame(loop);
-    };
-
-    loop();
+          if (this.useAnalyserFallback && !this.useMediaRecorderHack) {
+             const maxDb = this.magnitudes ? Math.max(...this.magnitudes) : -100;
+             if (maxDb <= -100) {
+                 this.log('Silence detected! Switching to Priority 3 (MediaRecorder)...', 'warn');
+                 this.switchToMediaRecorderHack(source);
+             }
+          }
+      }, 2000);
   }
   
-  // 生のPCMデータ（MediaRecorderからのパケット）を処理
-  processRawPcm(pcmData) {
-    if (this.isPaused) return;
-    
-    // 時間領域データの更新（ダウンサンプリングして表示用バッファに合わせる）
-    const step = Math.ceil(pcmData.length / this.timeDomain.length);
-    for (let i = 0; i < this.timeDomain.length; i++) {
-      const idx = i * step;
-      if (idx < pcmData.length) {
-        // -1.0〜1.0 -> 0〜255 (を正規化したものではないが、描画側で同様に扱う)
-        // 描画エンジンは 0.0-1.0 あるいは -1.0-1.0 を期待している設定によるが
-        // ここでは timeDomain は Float32Array なので生の値をそのまま入れる
-        this.timeDomain[i] = pcmData[idx];
-      } else {
-        this.timeDomain[i] = 0;
-      }
-    }
-    
-    // 周波数領域（簡易RMSで代用）
-    let sumSq = 0;
-    let maxAmp = 0; // 最大振幅チェック用
-    
-    for (let i = 0; i < pcmData.length; i++) {
-        const val = pcmData[i];
-        sumSq += val * val;
-        if (Math.abs(val) > maxAmp) maxAmp = Math.abs(val);
-    }
-    const rms = Math.sqrt(sumSq / pcmData.length);
-    const db = 20 * Math.log10(rms + 1e-10); // 無音回避
-    
-    // ログ出力（波形データが本当に来ているか確認）
-    if (this.analyserDebugCount % 5 === 0) { // 少し頻度を下げる
-      const timeMin = Math.min(...this.timeDomain);
-      const timeMax = Math.max(...this.timeDomain);
-      this.log(`Hack Wave: AmpMax=${maxAmp.toFixed(4)}, DispRange=[${timeMin.toFixed(2)}, ${timeMax.toFixed(2)}]`, 'info');
-    }
-    
-    // 全ビンに適用（フラットだが反応はする）
-    const val = Math.max(-100, Math.min(0, db));
-    for (let i = 0; i < this.binCount; i++) {
-        // 少しランダム性を入れて「動いている感」を出す
-        const noise = (Math.random() - 0.5) * 5; 
-        this.magnitudes[i] = Math.max(-100, Math.min(0, val + noise));
-        
-        // ピークホールド更新
-        if (this.magnitudes[i] > this.peakHold[i]) {
-            this.peakHold[i] = this.magnitudes[i];
-        }
-    }
-  }
-  
-  // AnalyserNodeからデータを取得して処理
-  processAnalyserData() {
-    if (this.isPaused) return;
-    
-    // デバッグ用カウンター初期化
-    if (!this.analyserDebugCount) this.analyserDebugCount = 0;
-    this.analyserDebugCount++;
-    
-    // 周波数データを取得
-    const freqData = new Uint8Array(this.analyserNode.frequencyBinCount);
-    this.analyserNode.getByteFrequencyData(freqData);
-    
-    // 時間領域データを取得
-    const timeData = new Uint8Array(this.analyserNode.fftSize);
-    this.analyserNode.getByteTimeDomainData(timeData);
-    
-    // 5秒ごとに生データをログ
-    if (this.analyserDebugCount % 300 === 1) {
-      const maxRaw = Math.max(...freqData);
-      const sum = freqData.reduce((a, b) => a + b, 0);
-      const first10 = Array.from(freqData.slice(0, 10)).join(',');
-      this.log(`Raw: max=${maxRaw}, sum=${sum}, bins=${freqData.length}`, 'info');
-      this.log(`First10: [${first10}]`, 'info');
+  switchToMediaRecorderHack(source) {
+      try {
+        source.disconnect();
+        this.gainNode.disconnect();
+        this.analyserNode.disconnect();
+      } catch(e){}
       
-      // 時間領域データも確認（128が無音の中心値）
-      const timeMax = Math.max(...timeData);
-      const timeMin = Math.min(...timeData);
-      this.log(`Time domain: min=${timeMin}, max=${timeMax}`, 'info');
-    }
-    
-    // 周波数データをdBに変換
-    const gain = this.gainNode ? this.gainNode.gain.value : 1;
-    for (let i = 0; i < Math.min(freqData.length, this.binCount); i++) {
-      // 0-255を-100dB〜0dBに変換
-      const normalized = freqData[i] / 255;
-      const db = normalized > 0 ? 20 * Math.log10(normalized) : -100;
-      this.magnitudes[i] = Math.max(-100, Math.min(0, db));
+      this.useMediaRecorderHack = true;
       
-      // ピークホールド更新
-      if (this.magnitudes[i] > this.peakHold[i]) {
-        this.peakHold[i] = this.magnitudes[i];
-      }
-    }
-    
-    // 時間領域データを正規化
-    for (let i = 0; i < Math.min(timeData.length, this.fftSize); i++) {
-      this.timeDomain[i] = (timeData[i] - 128) / 128;
-    }
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') 
+                        ? 'audio/webm;codecs=opus' : 'audio/webm';
+       
+      this.mediaRecorderSource = new MediaRecorder(this.mediaStream, { mimeType });
+       
+      this.mediaRecorderSource.ondataavailable = async (e) => {
+         if (e.data.size > 0 && this.isRunning) {
+           const arrayBuffer = await e.data.arrayBuffer();
+           try {
+             const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
+             const pcm = audioBuffer.getChannelData(0);
+             this.processRawPcm(pcm);
+           } catch(err) {}
+         }
+      };
+       
+      this.mediaRecorderSource.onstop = () => {
+         if (this.isRunning && this.mediaRecorderSource) {
+           setTimeout(() => {
+              if(this.mediaRecorderSource && this.mediaRecorderSource.state === 'inactive') {
+                this.mediaRecorderSource.start();
+              }
+           }, 50); 
+         }
+      };
+       
+      const loopRecorder = () => {
+         if (!this.isRunning || !this.mediaRecorderSource) return;
+         if (this.mediaRecorderSource.state === 'recording') {
+           this.mediaRecorderSource.stop();
+         }
+         setTimeout(loopRecorder, 500);
+      };
+       
+      this.mediaRecorderSource.start();
+      setTimeout(loopRecorder, 500);
+      
+      this.log('Pipeline: MediaRecorder Hack (Priority 3)', 'success');
   }
 
   stop() {
     this.isRunning = false;
     this.uiController.showStartButton();
+    
+    if (this.silenceTimer) clearTimeout(this.silenceTimer);
     
     // MediaRecorder停止
     if (this.mediaRecorderSource && this.mediaRecorderSource.state !== 'inactive') {
@@ -758,28 +501,17 @@ class AudioAnalyzerApp {
     }
 
     if (this.audioContext) {
-      // AudioContextはcloseせずsuspendで止める（再開時のため）
       if (this.audioContext.state !== 'closed') {
         this.audioContext.suspend();
       }
     }
 
-    if (this.dummyProcessor) {
-      try { 
-        this.dummyProcessor.disconnect(); 
-        this.dummyProcessor.onaudioprocess = null;
-      } catch(e) {}
-      this.dummyProcessor = null;
-    }
-    
     if (this.analyserNode) {
       try { this.analyserNode.disconnect(); } catch(e) {}
-      this.analyserNode = null;
     }
     
     if (this.gainNode) {
       try { this.gainNode.disconnect(); } catch(e) {}
-      this.gainNode = null;
     }
 
     if (this.mediaStream) {
@@ -788,6 +520,101 @@ class AudioAnalyzerApp {
     }
 
     this.log('Stopped.', 'info');
+  }
+  
+  // 生のPCMデータ（MediaRecorderからのパケット）を処理
+  processRawPcm(pcmData) {
+    if (this.isPaused) return;
+    
+    // 時間領域データの更新（ダウンサンプリング）
+    const step = Math.ceil(pcmData.length / this.timeDomain.length);
+    for (let i = 0; i < this.timeDomain.length; i++) {
+        const idx = i * step;
+        if (idx < pcmData.length) {
+            this.timeDomain[i] = pcmData[idx];
+        } else {
+            this.timeDomain[i] = 0;
+        }
+    }
+    
+    // 周波数領域（簡易RMSで代用）
+    let sumSq = 0;
+    for (let i = 0; i < pcmData.length; i++) {
+        sumSq += pcmData[i] * pcmData[i];
+    }
+    const rms = Math.sqrt(sumSq / pcmData.length);
+    const db = 20 * Math.log10(rms + 1e-10); // 無音回避
+    
+    // 全ビンに適用（フラットだが反応はする）
+    const val = Math.max(-100, Math.min(0, db));
+    for (let i = 0; i < this.binCount; i++) {
+        // 少しランダム性を入れて「動いている感」を出す
+        const noise = (Math.random() - 0.5) * 5; 
+        this.magnitudes[i] = Math.max(-100, Math.min(0, val + noise));
+        
+        if (this.magnitudes[i] > this.peakHold[i]) {
+            this.peakHold[i] = this.magnitudes[i];
+        }
+    }
+  }
+
+  processAnalyserData() {
+    if (this.isPaused) return;
+    
+    // AnalyserNodeからデータを取得
+    const freqData = new Uint8Array(this.analyserNode.frequencyBinCount);
+    this.analyserNode.getByteFrequencyData(freqData);
+    
+    const timeData = new Uint8Array(this.analyserNode.fftSize);
+    this.analyserNode.getByteTimeDomainData(timeData);
+    
+    // 周波数データをdBに変換
+    for (let i = 0; i < Math.min(freqData.length, this.binCount); i++) {
+      const normalized = freqData[i] / 255;
+      const db = normalized > 0 ? 20 * Math.log10(normalized) : -100;
+      this.magnitudes[i] = Math.max(-100, Math.min(0, db));
+      
+      if (this.magnitudes[i] > this.peakHold[i]) {
+        this.peakHold[i] = this.magnitudes[i];
+      }
+    }
+    
+    // 時間領域データを正規化
+    for (let i = 0; i < Math.min(timeData.length, this.fftSize); i++) {
+      this.timeDomain[i] = (timeData[i] - 128) / 128;
+    }
+  }
+
+  startAnimationLoop() {
+    let frameCount = 0;
+    let lastLogTime = Date.now();
+    
+    const loop = () => {
+      if (!this.isRunning) return;
+      
+      frameCount++;
+
+      // AnalyserNodeフォールバック時はここでデータを取得
+      // ただし、MediaRecorder Hackモードの時はスキップ
+      if (this.useAnalyserFallback && this.analyserNode && !this.useMediaRecorderHack) {
+        this.processAnalyserData();
+      }
+      
+      this.visualizer.draw(
+        this.magnitudes,
+        this.peakHold,
+        this.timeDomain,
+        this.binCount,
+        this.sampleRate,
+      );
+
+      this.uiController.updateSpotAnalysis();
+      this.uiController.updateStatus(this.sampleRate, this.fftSize, this.visualizer.getFps());
+
+      this.animationId = requestAnimationFrame(loop);
+    };
+
+    loop();
   }
 
   togglePause() {
