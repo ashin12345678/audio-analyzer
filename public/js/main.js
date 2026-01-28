@@ -210,13 +210,31 @@ class AudioAnalyzerApp {
       // AudioWorkletが使えない場合はAnalyserNodeを使用
       if (!useWorklet) {
         this.log('Using AnalyserNode fallback...', 'info');
+        
+        // MediaStreamのトラック情報を確認
+        const tracks = this.mediaStream.getAudioTracks();
+        this.log(`Audio tracks: ${tracks.length}`, 'info');
+        if (tracks.length > 0) {
+          const track = tracks[0];
+          this.log(`Track: ${track.label}, enabled: ${track.enabled}, muted: ${track.muted}, state: ${track.readyState}`, 'info');
+        }
+        
         this.analyserNode = this.audioContext.createAnalyser();
         this.analyserNode.fftSize = this.fftSize;
         this.analyserNode.smoothingTimeConstant = 0.3;
+        this.analyserNode.minDecibels = -100;
+        this.analyserNode.maxDecibels = 0;
         
-        // 接続
+        // 接続（一部のブラウザではdestinationへの接続が必要）
         source.connect(this.gainNode);
         this.gainNode.connect(this.analyserNode);
+        
+        // ミュート状態でdestinationにも接続（オーディオパイプラインを活性化）
+        const silentGain = this.audioContext.createGain();
+        silentGain.gain.value = 0; // 無音
+        this.analyserNode.connect(silentGain);
+        silentGain.connect(this.audioContext.destination);
+        this.log('Connected to destination (silent)', 'info');
         
         // フォールバック用のデータ配列を初期化
         this.useFallbackFFT();
