@@ -288,12 +288,27 @@ class AudioAnalyzerApp {
   }
 
   startAnimationLoop() {
+    let frameCount = 0;
+    let lastLogTime = Date.now();
+    
     const loop = () => {
       if (!this.isRunning) return;
+      
+      frameCount++;
 
       // AnalyserNodeフォールバック時はここでデータを取得
       if (this.useAnalyserFallback && this.analyserNode) {
         this.processAnalyserData();
+      }
+      
+      // 3秒ごとにデータ状態をログ
+      const now = Date.now();
+      if (now - lastLogTime > 3000) {
+        const maxMag = this.magnitudes ? Math.max(...this.magnitudes) : -100;
+        const mode = this.useAnalyserFallback ? 'AnalyserNode' : 'AudioWorklet';
+        this.log(`[${mode}] frames:${frameCount}, maxdB:${maxMag.toFixed(1)}`, 'info');
+        frameCount = 0;
+        lastLogTime = now;
       }
 
       // 描画
