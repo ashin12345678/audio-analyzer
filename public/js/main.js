@@ -39,8 +39,29 @@ class AudioAnalyzerApp {
 
     // アニメーション
     this.animationId = null;
+    
+    // デバッグ
+    this.debugLog = document.getElementById('debugLog');
+    this.setupDebug();
 
     this.init();
+  }
+  
+  // デバッグログ関数
+  setupDebug() {
+    document.getElementById('clearDebugBtn').addEventListener('click', () => {
+      this.debugLog.innerHTML = '';
+    });
+  }
+  
+  log(message, type = 'info') {
+    const entry = document.createElement('div');
+    entry.className = `log-entry log-${type}`;
+    const time = new Date().toLocaleTimeString();
+    entry.textContent = `[${time}] ${message}`;
+    this.debugLog.appendChild(entry);
+    this.debugLog.scrollTop = this.debugLog.scrollHeight;
+    console.log(`[${type}] ${message}`);
   }
 
   async init() {
@@ -118,6 +139,8 @@ class AudioAnalyzerApp {
     if (this.isRunning) return;
 
     try {
+      this.log('Starting audio capture...', 'info');
+      
       // マイクアクセス取得（モバイル対応設定）
       const constraints = {
         audio: {
@@ -127,30 +150,36 @@ class AudioAnalyzerApp {
         },
       };
 
+      this.log('Requesting microphone access...', 'info');
       this.mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
-      console.log('Microphone access granted');
+      this.log('Microphone access granted!', 'success');
 
       // AudioContext作成
       const AudioContextClass = window.AudioContext || window.webkitAudioContext;
       this.audioContext = new AudioContextClass();
+      this.log(`AudioContext created, state: ${this.audioContext.state}`, 'info');
 
       // モバイルブラウザではAudioContextがsuspended状態で始まることがある
       if (this.audioContext.state === "suspended") {
+        this.log('AudioContext suspended, resuming...', 'warn');
         await this.audioContext.resume();
+        this.log(`AudioContext resumed, state: ${this.audioContext.state}`, 'success');
       }
 
       // 実際のサンプリングレートを取得
       this.sampleRate = this.audioContext.sampleRate;
-      console.log("AudioContext started, sampleRate:", this.sampleRate);
+      this.log(`Sample rate: ${this.sampleRate} Hz`, 'info');
 
       // ノード作成
       const source = this.audioContext.createMediaStreamSource(this.mediaStream);
       this.gainNode = this.audioContext.createGain();
+      this.log('Audio nodes created', 'info');
       
       // AudioWorkletを試す、失敗したらAnalyserNodeにフォールバック
       let useWorklet = false;
       
       try {
+        this.log('Trying AudioWorklet...', 'info');
         await this.audioContext.audioWorklet.addModule("./js/audio-processor.js");
         this.workletNode = new AudioWorkletNode(this.audioContext, "audio-analyzer-processor");
         
@@ -166,13 +195,14 @@ class AudioAnalyzerApp {
         };
         
         useWorklet = true;
-        console.log("Using AudioWorklet for audio processing");
+        this.log('Using AudioWorklet - OK!', 'success');
       } catch (workletError) {
-        console.warn("AudioWorklet not available, using AnalyserNode fallback:", workletError);
+        this.log(`AudioWorklet failed: ${workletError.message}`, 'warn');
       }
       
       // AudioWorkletが使えない場合はAnalyserNodeを使用
       if (!useWorklet) {
+        this.log('Using AnalyserNode fallback...', 'info');
         this.analyserNode = this.audioContext.createAnalyser();
         this.analyserNode.fftSize = this.fftSize;
         this.analyserNode.smoothingTimeConstant = 0.3;
@@ -185,16 +215,17 @@ class AudioAnalyzerApp {
         this.useFallbackFFT();
         this.useAnalyserFallback = true;
         
-        console.log("Using AnalyserNode for audio processing");
+        this.log('AnalyserNode configured - OK!', 'success');
       }
 
       this.isRunning = true;
       this.uiController.showPauseButton();
+      this.log('Audio capture started!', 'success');
 
       // アニメーションループ開始
       this.startAnimationLoop();
     } catch (error) {
-      console.error("Failed to start audio:", error);
+      this.log(`ERROR: ${error.message}`, 'error');
       alert("マイクへのアクセスに失敗しました: " + error.message);
     }
   }
