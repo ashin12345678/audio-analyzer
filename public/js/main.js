@@ -734,7 +734,9 @@ class AudioAnalyzerApp {
     const rms = Math.sqrt(sumSq / pcmData.length);
     
     // AGC更新（生のRMSを使用）
-    this.updateAutoGain(rms);
+    if (Number.isFinite(rms)) {
+        this.updateAutoGain(rms);
+    }
     
     // ソフトゲイン適用（AGC/手動ゲインを反映）
     const currentGain = this.gainNode ? this.gainNode.gain.value : 1.0;
@@ -775,29 +777,43 @@ class AudioAnalyzerApp {
     for (let i = 0; i < this.binCount; i++) {
         // FFTの結果はリニアなのでdB変換
         // fftMagsは 0~1 程度に正規化されている前提
-        const mag = fftMags[i];
+        let mag = fftMags[i];
+        
+        // 安全対策: NaN/Infinityチェック
+        if (!Number.isFinite(mag)) mag = 0;
+        
+        // dB変換 (log10(0)対策も含める)
         let db = 20 * Math.log10(mag + 1e-10);
         
         // ゲイン適用 (Soft Gain)
         const currentGain = this.gainNode ? this.gainNode.gain.value : 1.0;
-        db += 20 * Math.log10(currentGain);
+        if (Number.isFinite(currentGain) && currentGain > 0) {
+            db += 20 * Math.log10(currentGain);
+        }
 
-        // クランプ
+        // クランプ & NaNチェック
+        if (!Number.isFinite(db)) db = -100;
         db = Math.max(-100, Math.min(0, db));
 
         // スムージング
-        const currentVal = this.magnitudes[i] !== undefined ? this.magnitudes[i] : -100;
+        let currentVal = this.magnitudes[i];
+        if (!Number.isFinite(currentVal)) currentVal = -100; // 初期不良対策
+
         this.magnitudes[i] = currentVal * smoothing + db * (1 - smoothing);
         
         // Peak Hold更新
         // バグ修正: いきなり下がるときにPeakが残るように
         // Peakは常に減衰(Decay)させることで、「リセットされない」問題と「落ちすぎる」問題を両立
-        if (this.peakHold[i] === undefined || this.magnitudes[i] > this.peakHold[i]) {
+        
+        let currentPeak = this.peakHold[i];
+        if (!Number.isFinite(currentPeak)) currentPeak = -100;
+
+        if (this.magnitudes[i] > currentPeak) {
             this.peakHold[i] = this.magnitudes[i];
         } else {
              // ゆらぎを持たせて自然に減衰 (-60dB/secくらい)
              // 60FPS想定で 1フレームあたり -0.5dB
-             this.peakHold[i] -= 0.5;
+             this.peakHold[i] = currentPeak - 0.5;
         }
     }
   }
