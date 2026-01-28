@@ -1,6 +1,6 @@
 /**
  * Main Application - Audio Analyzer
- * WebAssembly + AudioWorklet統合
+ * WebAssembly + AudioWorklet + WebCodecs統合
  */
 
 import { Visualizer } from "./visualizer.js";
@@ -27,6 +27,7 @@ class AudioAnalyzerApp {
     this.useAnalyserFallback = false;
     this.useMediaRecorderHack = false;
     this.mediaRecorderSource = null;
+    this.webCodecsReader = null; // WebCodecs用
 
     // データバッファ
     this.magnitudes = null;
@@ -205,6 +206,10 @@ class AudioAnalyzerApp {
     entry.className = `log-entry log-${type}`;
     entry.textContent = `[${time}] ${message}`;
     
+    console.log(`[${type}] ${message}`);
+    
+    if (!this.debugLog) return;
+
     // スクロール位置が一番下に近いかチェック（スマートスクロール）
     const isScrolledToBottom = this.debugLog.scrollHeight - this.debugLog.clientHeight <= this.debugLog.scrollTop + 50;
     
@@ -214,8 +219,6 @@ class AudioAnalyzerApp {
     if (isScrolledToBottom) {
       this.debugLog.scrollTop = this.debugLog.scrollHeight;
     }
-    
-    console.log(`[${type}] ${message}`);
   }
 
   async init() {
@@ -369,38 +372,69 @@ class AudioAnalyzerApp {
       }
   }
 
-  async setupProcessingPipeline(source) {
+   async setupProcessingPipeline(source) {
       const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-      
-      let success = false;
       
       // 優先度1: AudioWorklet 
       // 「処理が速い順」なのでMobileでも試すが、失敗したらフォールバック
-      if (this.wasmReady) {
+      if (this.wasmReady && !isMobile) {
           try {
               // Note: AudioWorkletの実装は簡略化しています
-              // 本来はProcessorのロードが必要
-              /*
-              await this.audioContext.audioWorklet.addModule('js/audio-processor.js');
-              this.workletNode = new AudioWorkletNode(this.audioContext, 'audio-processor', { ... });
-              source.connect(this.workletNode);
-              this.workletNode.connect(this.gainNode);
-              this.gainNode.connect(this.audioContext.destination);
-              success = true;
-              */
-             // 今回はリスク回避のため、Mobileは一律AnalyserNodeから始める（既存安定動作優先）
-             if (!isMobile) {
-                // PC向けのWorklet処理をここに書く...今回は省略しAnalyserへ
-             }
+              /* PC向けWorklet実装 */
           } catch(e) { /*...*/ }
       }
       
-      // 優先度2: AnalyserNode (デフォルト・フォールバック)
-      this.setupAnalyserNode(source);
-      this.log('Pipeline: AnalyserNode (Priority 2)', 'info');
+      // 優先度2: WebCodecs (Android向け高速化)
+      // Android ChromeでMediaStreamTrackProcessorが使えるならこれを使う
+      // バグ回避のため、Web Audio APIを通さず直接Streamから取る
+      if (window.MediaStreamTrackProcessor) {
+        try {
+           await this.setupWebCodecs(source.mediaStream);
+           this.log('Pipeline: WebCodecs (Priority 2)', 'success');
+           return;
+        } catch(e) {
+           this.log(`WebCodecs failed: ${e.message}`, 'warn');
+        }
+      }
       
-      // 優先度3への準備: 無音検知（Zenfone 10対策）
+      // 優先度3: AnalyserNode (デフォルト・フォールバック)
+      this.setupAnalyserNode(source);
+      this.log('Pipeline: AnalyserNode (Priority 3)', 'info');
+      
+      // 優先度4への準備: 無音検知（Zenfone 10対策）
       this.startSilenceDetector(source);
+  }
+
+  async setupWebCodecs(stream) {
+      const track = stream.getAudioTracks()[0];
+      const processor = new MediaStreamTrackProcessor({ track });
+      const reader = processor.readable.getReader();
+      this.webCodecsReader = reader;
+      
+      // 読み取りループ開始（非同期）
+      this.readWebCodecs(reader);
+  }
+  
+  async readWebCodecs(reader) {
+      try {
+          while (this.isRunning) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              
+              // AudioDataをFloat32Arrayにコピー
+              if (value.numberOfFrames > 0) {
+                 const channelData = new Float32Array(value.numberOfFrames);
+                 value.copyTo(channelData, { planeIndex: 0 });
+                 this.processRawPcm(channelData);
+              }
+              value.close(); // 重要: メモリリーク防止
+          }
+      } catch(e) {
+          this.log(`WebCodecs read error: ${e.message}`, 'error');
+      } finally {
+          // ロック解放
+          try { reader.releaseLock(); } catch(e){}
+      }
   }
 
   setupAnalyserNode(source) {
@@ -423,7 +457,7 @@ class AudioAnalyzerApp {
           if (this.useAnalyserFallback && !this.useMediaRecorderHack) {
              const maxDb = this.magnitudes ? Math.max(...this.magnitudes) : -100;
              if (maxDb <= -100) {
-                 this.log('Silence detected! Switching to Priority 3 (MediaRecorder)...', 'warn');
+                 this.log('Silence detected! Switching to Priority 4 (MediaRecorder)...', 'warn');
                  this.switchToMediaRecorderHack(source);
              }
           }
@@ -476,7 +510,7 @@ class AudioAnalyzerApp {
       this.mediaRecorderSource.start();
       setTimeout(loopRecorder, 500);
       
-      this.log('Pipeline: MediaRecorder Hack (Priority 3)', 'success');
+      this.log('Pipeline: MediaRecorder Hack (Priority 4)', 'success');
   }
 
   stop() {
@@ -484,6 +518,12 @@ class AudioAnalyzerApp {
     this.uiController.showStartButton();
     
     if (this.silenceTimer) clearTimeout(this.silenceTimer);
+    
+    // WebCodecs停止
+    if (this.webCodecsReader) {
+        try { this.webCodecsReader.cancel(); } catch(e){}
+        this.webCodecsReader = null;
+    }
     
     // MediaRecorder停止
     if (this.mediaRecorderSource && this.mediaRecorderSource.state !== 'inactive') {
@@ -522,7 +562,7 @@ class AudioAnalyzerApp {
     this.log('Stopped.', 'info');
   }
   
-  // 生のPCMデータ（MediaRecorderからのパケット）を処理
+  // 生のPCMデータ（WebCodecs / MediaRecorderからのパケット）を処理
   processRawPcm(pcmData) {
     if (this.isPaused) return;
     
@@ -586,17 +626,12 @@ class AudioAnalyzerApp {
   }
 
   startAnimationLoop() {
-    let frameCount = 0;
-    let lastLogTime = Date.now();
-    
     const loop = () => {
       if (!this.isRunning) return;
       
-      frameCount++;
-
       // AnalyserNodeフォールバック時はここでデータを取得
-      // ただし、MediaRecorder Hackモードの時はスキップ
-      if (this.useAnalyserFallback && this.analyserNode && !this.useMediaRecorderHack) {
+      // ただし、MediaRecorder/WebCodecs時はそれぞれのイベントでデータが来るのでスキップ
+      if (this.useAnalyserFallback && this.analyserNode && !this.useMediaRecorderHack && !this.webCodecsReader) {
         this.processAnalyserData();
       }
       
