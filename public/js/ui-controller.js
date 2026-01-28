@@ -7,16 +7,22 @@ export class UIController {
     constructor(app) {
         this.app = app;
         this.canvas = document.getElementById('visualizer');
-        this.overlay = document.getElementById('overlay');
+        this.infoPanel = document.getElementById('infoPanel');
+        this.infoFreq = document.getElementById('infoFreq');
+        this.infoDb = document.getElementById('infoDb');
         
+        // AGC状態
+        this.agcEnabled = false;
+
         // タッチ状態
         this.touchStartDistance = 0;
         this.currentZoom = 1;
         
-        // スポット解析の位置を保持
+        // スポット解析の位置
         this.spotX = null;
         this.spotY = null;
         this.spotActive = false;
+        this.isDragging = false;
         
         // イベントリスナー設定
         this.setupEventListeners();
@@ -60,16 +66,45 @@ export class UIController {
             });
         });
         
-        // ゲインスライダー
-        const gainSlider = document.getElementById('gainSlider');
-        const gainValue = document.getElementById('gainValue');
-        gainSlider.addEventListener('input', (e) => {
-            const gain = parseFloat(e.target.value);
+        // --- Gain Control (New Input + Buttons) ---
+        const gainInput = document.getElementById('gainInput');
+        const gainUpBtn = document.getElementById('gainUpBtn');
+        const gainDownBtn = document.getElementById('gainDownBtn');
+        const agcBtn = document.getElementById('agcBtn');
+
+        // Input Change
+        gainInput.addEventListener('change', (e) => {
+            let val = parseFloat(e.target.value);
+            if (isNaN(val)) val = 0.0;
+            // 数値からゲイン倍率へ変換: 10^(dB/20)
+            const gain = Math.pow(10, val / 20);
             this.app.setGain(gain);
-            // 倍率をdBに変換して表示
-            const gainDb = 20 * Math.log10(gain);
-            const sign = gainDb >= 0 ? '+' : '';
-            gainValue.textContent = `${sign}${gainDb.toFixed(1)}dB`;
+        });
+
+        // Up Button
+        gainUpBtn.addEventListener('click', () => {
+            let currentDb = parseFloat(gainInput.value) || 0;
+            const newDb = currentDb + 1.0;
+            gainInput.value = newDb.toFixed(1);
+            const gain = Math.pow(10, newDb / 20);
+            this.app.setGain(gain);
+        });
+
+        // Down Button
+        gainDownBtn.addEventListener('click', () => {
+            let currentDb = parseFloat(gainInput.value) || 0;
+            const newDb = currentDb - 1.0;
+            gainInput.value = newDb.toFixed(1);
+            const gain = Math.pow(10, newDb / 20);
+            this.app.setGain(gain);
+        });
+
+        // AGC Toggle
+        agcBtn.addEventListener('click', () => {
+            this.agcEnabled = !this.agcEnabled;
+            agcBtn.dataset.active = this.agcEnabled;
+            agcBtn.textContent = `AGC: ${this.agcEnabled ? 'ON' : 'OFF'}`;
+            this.app.setAgcEnabled(this.agcEnabled);
         });
         
         // ピークホールドトグル
@@ -82,13 +117,51 @@ export class UIController {
             this.app.resetPeakHold();
         });
         
-        // キャンバスクリック（スポット解析）
-        this.canvas.addEventListener('click', (e) => this.handleCanvasClick(e));
-        this.canvas.addEventListener('touchend', (e) => this.handleCanvasTouchEnd(e));
+        // --- Canvas Interaction (Touch & Drag) ---
+        // マウス
+        this.canvas.addEventListener('mousedown', (e) => {
+            this.isDragging = true;
+            this.handleInputMove(e.clientX, e.clientY);
+        });
         
-        // ピンチズーム
-        this.canvas.addEventListener('touchstart', (e) => this.handleTouchStart(e), { passive: false });
-        this.canvas.addEventListener('touchmove', (e) => this.handleTouchMove(e), { passive: false });
+        window.addEventListener('mousemove', (e) => {
+            if (this.isDragging) {
+                this.handleInputMove(e.clientX, e.clientY);
+            }
+        });
+        
+        window.addEventListener('mouseup', () => {
+            this.isDragging = false;
+            this.hideSpotAnalysis();
+        });
+
+        // タッチ (スライド追従)
+        this.canvas.addEventListener('touchstart', (e) => {
+            if (e.touches.length === 1) {
+                this.isDragging = true;
+                const t = e.touches[0];
+                this.handleInputMove(t.clientX, t.clientY);
+            } else {
+                this.handleTouchStart(e); // ピンチズームなど
+            }
+        }, { passive: false });
+
+        this.canvas.addEventListener('touchmove', (e) => {
+            if (this.isDragging && e.touches.length === 1) {
+                e.preventDefault(); // スクロール防止
+                const t = e.touches[0];
+                this.handleInputMove(t.clientX, t.clientY);
+            } else {
+                this.handleTouchMove(e);
+            }
+        }, { passive: false });
+
+        this.canvas.addEventListener('touchend', (e) => {
+            if (e.touches.length === 0) {
+                this.isDragging = false;
+                this.hideSpotAnalysis();
+            }
+        });
         
         // マウスホイールズーム
         this.canvas.addEventListener('wheel', (e) => this.handleWheel(e), { passive: false });
@@ -99,6 +172,20 @@ export class UIController {
         // 全画面変更イベント
         document.addEventListener('fullscreenchange', () => this.updateFullscreenButton());
         document.addEventListener('webkitfullscreenchange', () => this.updateFullscreenButton());
+    }
+
+    // 共通入力ハンドラ (Mouse/Touch)
+    handleInputMove(clientX, clientY) {
+        const rect = this.canvas.getBoundingClientRect();
+        const x = clientX - rect.left;
+        const y = clientY - rect.top;
+
+        // 範囲内チェック
+        if (x >= 0 && x <= rect.width && y >= 0 && y <= rect.height) {
+            this.showSpotAnalysis(x, y);
+        } else {
+            this.hideSpotAnalysis();
+        }
     }
     
     toggleFullscreen() {
@@ -137,38 +224,13 @@ export class UIController {
         controls.classList.toggle('collapsed');
     }
     
-    handleCanvasClick(e) {
-        if (e.detail === 2) return; // ダブルクリックは無視
-        
-        const rect = this.canvas.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
-        
-        this.showSpotAnalysis(x, y);
-    }
-    
-    handleCanvasTouchEnd(e) {
-        if (e.touches.length === 0 && e.changedTouches.length === 1) {
-            const rect = this.canvas.getBoundingClientRect();
-            const touch = e.changedTouches[0];
-            const x = touch.clientX - rect.left;
-            const y = touch.clientY - rect.top;
-            
-            this.showSpotAnalysis(x, y);
-        }
-    }
-    
     showSpotAnalysis(x, y) {
         // 位置を保存してリアルタイム更新を有効化
         this.spotX = x;
         this.spotY = y;
         this.spotActive = true;
         
-        // オーバーレイを画面上部中央に固定表示
-        this.overlay.style.left = '50%';
-        this.overlay.style.top = '10px';
-        this.overlay.style.transform = 'translateX(-50%)';
-        this.overlay.classList.remove('hidden');
+        this.infoPanel.classList.remove('hidden');
         
         // 初回表示を即座に更新
         this.updateSpotAnalysis();
@@ -183,10 +245,10 @@ export class UIController {
         if (data) {
             const freqText = data.frequency >= 1000 
                 ? `${(data.frequency / 1000).toFixed(2)} kHz`
-                : `${data.frequency.toFixed(1)} Hz`;
+                : `${data.frequency.toFixed(0)} Hz`; // 整数Hzで見やすく
             
-            this.overlay.querySelector('.frequency').textContent = freqText;
-            this.overlay.querySelector('.level').textContent = `${data.db.toFixed(1)} dB`;
+            this.infoFreq.textContent = freqText;
+            this.infoDb.textContent = `${data.db.toFixed(1)} dB`;
         }
     }
     
@@ -195,7 +257,18 @@ export class UIController {
         this.spotActive = false;
         this.spotX = null;
         this.spotY = null;
-        this.overlay.classList.add('hidden');
+        this.infoPanel.classList.add('hidden');
+    }
+
+    // Gain表示の更新（外部から呼ばれる場合やAGCによる自動更新反映用）
+    updateGainDisplay(gain) {
+        const input = document.getElementById('gainInput');
+        // Gain倍率 -> dB
+        const db = 20 * Math.log10(gain);
+        // 入力中じゃなければ更新
+        if (document.activeElement !== input) {
+            input.value = db.toFixed(1);
+        }
     }
     
     handleTouchStart(e) {

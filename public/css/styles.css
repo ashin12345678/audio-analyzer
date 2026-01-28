@@ -78,45 +78,40 @@ body {
 }
 
 /* オーバーレイ（スポット解析） */
-.overlay {
+/* 情報パネル (インタラクティブ) */
+.info-panel {
   position: absolute;
-  pointer-events: none;
-  z-index: 10;
-  padding: 10px 20px;
-  background: rgba(0, 0, 0, 0.9);
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 15;
+  padding: 8px 24px;
+  background: rgba(0, 0, 0, 0.7);
   border: 1px solid var(--accent-primary);
-  border-radius: var(--border-radius);
-  backdrop-filter: blur(8px);
-  transition: opacity var(--transition-fast);
-}
-
-.overlay.hidden {
-  opacity: 0;
-}
-
-.overlay-content {
+  border-radius: 20px;
+  backdrop-filter: blur(4px);
   display: flex;
-  flex-direction: row;
   align-items: center;
-  gap: 12px;
+  gap: 16px;
+  transition: opacity var(--transition-fast);
+  color: var(--text-primary);
+  pointer-events: none; /* 初期状態ではスルー */
 }
 
-.overlay .frequency {
-  font-size: 18px;
+.info-panel.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.info-panel span {
+  font-size: 16px;
   font-weight: 600;
-  color: var(--accent-primary);
+  font-family: monospace;
 }
 
-.overlay .separator {
-  color: var(--text-muted);
-  font-size: 18px;
-}
-
-.overlay .level {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--success);
-}
+#infoFreq { color: var(--accent-primary); }
+#infoDb { color: var(--success); }
+.separator { color: var(--text-muted); }
 
 /* コントロールパネル */
 .controls {
@@ -289,53 +284,87 @@ body {
 }
 
 /* ゲインコントロール */
-.gain-control {
+/* ゲインコントロールグループ */
+.gain-control-group {
   display: flex;
+  flex-direction: column;
+  gap: 4px;
   align-items: center;
-  gap: 8px;
+  min-width: 120px;
 }
 
-.gain-control label {
+.gain-label-row {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  align-items: center;
+}
+
+.gain-label-row label {
   font-size: 10px;
   font-weight: 600;
   color: var(--text-secondary);
-  text-transform: uppercase;
 }
 
-.gain-control input[type="range"] {
-  width: 80px;
-  height: 4px;
-  -webkit-appearance: none;
-  appearance: none;
-  background: var(--bg-tertiary);
-  border-radius: 2px;
-  outline: none;
+.gain-inputs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--bg-secondary);
+  padding: 2px;
+  border-radius: 4px;
+  border: 1px solid var(--text-muted);
 }
 
-.gain-control input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 16px;
-  height: 16px;
-  background: var(--accent-primary);
-  border-radius: 50%;
-  cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0, 212, 255, 0.4);
-}
-
-.gain-control input[type="range"]::-moz-range-thumb {
-  width: 16px;
-  height: 16px;
-  background: var(--accent-primary);
-  border-radius: 50%;
-  cursor: pointer;
+.gain-number-input {
+  width: 50px;
+  background: transparent;
   border: none;
+  color: var(--accent-primary);
+  text-align: center;
+  font-weight: bold;
+  font-family: monospace;
+  font-size: 14px;
+  outline: none;
+  -moz-appearance: textfield; /* Firefox */
+}
+.gain-number-input::-webkit-outer-spin-button,
+.gain-number-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 
-#gainValue {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--accent-primary);
-  min-width: 35px;
+.gain-btn {
+  width: 24px;
+  height: 24px;
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: none;
+  border-radius: 2px;
+  cursor: pointer;
+  font-weight: bold;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.gain-btn:hover { background: var(--accent-primary); color: var(--bg-primary); }
+.gain-btn:active { transform: scale(0.95); }
+
+.btn-micro {
+  font-size: 9px;
+  padding: 2px 6px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--text-muted);
+  border-radius: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.btn-micro[data-active="true"] {
+  background: var(--success);
+  color: var(--bg-primary);
+  border-color: var(--success);
+  font-weight: bold;
 }
 
 /* ピークコントロール */

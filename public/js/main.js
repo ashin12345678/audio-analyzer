@@ -38,7 +38,17 @@ class AudioAnalyzerApp {
     // 設定
     this.binCount = 1024;
     this.sampleRate = 48000;
+    this.sampleRate = 48000;
     this.fftSize = 2048;
+    this.initialGain = 1.0;
+    
+    // AGC設定
+    this.agcEnabled = false;
+    this.agcTargetDb = -12; // 目標レベル
+    this.agcMaxGain = 10.0; // 最大ゲイン (+20dB)
+    this.agcMinGain = 0.1;  // 最小ゲイン (-20dB)
+    this.agcAttack = 0.05;  // 下げる時の速度 (速い)
+    this.agcRelease = 0.005; // 上げる時の速度 (遅い)
 
     // コンポーネント
     this.visualizer = null;
@@ -144,6 +154,70 @@ class AudioAnalyzerApp {
         }
       });
     }
+  }
+
+  setGain(value) {
+    if (this.gainNode) {
+      // 安全策: 有限数チェック
+      if (!isFinite(value)) return;
+      
+      // 目標値への線形補間（クリックノイズ防止）
+      this.gainNode.gain.setTargetAtTime(value, this.audioContext.currentTime, 0.05);
+    }
+    // AGCが無効な時のみ、現在のゲインを基準として保持（AGC有効時は自動変動するため）
+    if (!this.agcEnabled) {
+        this.initialGain = value;
+    }
+  }
+
+  setAgcEnabled(enabled) {
+      this.agcEnabled = enabled;
+      this.log(`AGC: ${enabled ? 'ON' : 'OFF'}`, 'info');
+  }
+
+  // 自動ゲイン制御ロジック
+  updateAutoGain(currentRms) {
+      if (!this.agcEnabled || !this.gainNode) return;
+      if (currentRms < 0.000001) return; // 無音時は無視
+
+      const currentDb = 20 * Math.log10(currentRms);
+      // Main Gainの影響を含めた出力レベルを推定 (InputRMS * Gain)
+      // ただし、this.gainNode.gain.value は現在適用中のゲイン
+      const currentGain = this.gainNode.gain.value;
+      const outputDb = currentDb + 20 * Math.log10(currentGain);
+
+      let diffDb = this.agcTargetDb - outputDb;
+      
+      // クリップ防止（過大入力は即座に下げる）
+      if (outputDb > -1.0) {
+          diffDb = -5.0; // 強制的に下げる
+      }
+
+      // 調整量
+      let adjust = 0;
+      if (diffDb < 0) {
+          // 下げる (Attack)
+          adjust = diffDb * this.agcAttack;
+      } else {
+          // 上げる (Release)
+          adjust = diffDb * this.agcRelease;
+      }
+
+      // 新しいゲインを計算
+      const newGainDb = 20 * Math.log10(currentGain) + adjust;
+      let newGain = Math.pow(10, newGainDb / 20);
+
+      // リミット
+      newGain = Math.max(this.agcMinGain, Math.min(this.agcMaxGain, newGain));
+
+      // 適用
+      if (Math.abs(newGain - currentGain) > 0.01) {
+          this.gainNode.gain.setTargetAtTime(newGain, this.audioContext.currentTime, 0.1);
+          // UI反映 (頻度を下げるために変化が大きい時だけ呼ぶのが理想だが、ここでは常時)
+          if(this.uiController) {
+             this.uiController.updateGainDisplay(newGain);
+          }
+      }
   }
   
   toggleTestTone() {
@@ -584,7 +658,15 @@ class AudioAnalyzerApp {
         sumSq += pcmData[i] * pcmData[i];
     }
     const rms = Math.sqrt(sumSq / pcmData.length);
-    const db = 20 * Math.log10(rms + 1e-10); // 無音回避
+    
+    // AGC更新（生のRMSを使用）
+    this.updateAutoGain(rms);
+    
+    // ソフトゲイン適用（AGC/手動ゲインを反映）
+    const currentGain = this.gainNode ? this.gainNode.gain.value : 1.0;
+    const finalRms = rms * currentGain;
+
+    const db = 20 * Math.log10(finalRms + 1e-10); // 無音回避
     
     // 全ビンに適用（フラットだが反応はする）with スムージング
     const smoothing = 0.5; // 点滅防止用の係数
@@ -614,6 +696,16 @@ class AudioAnalyzerApp {
     
     const timeData = new Uint8Array(this.analyserNode.fftSize);
     this.analyserNode.getByteTimeDomainData(timeData);
+    
+    // AGC用RMS計算（TimeDomainデータから）
+    // AnalyserNodeのTimeDomainDataは 0-255 (128が中心)
+    let sumSq = 0;
+    for (let i = 0; i < timeData.length; i++) {
+        const v = (timeData[i] - 128) / 128; // -1.0 ~ 1.0
+        sumSq += v * v;
+    }
+    const rms = Math.sqrt(sumSq / timeData.length);
+    this.updateAutoGain(rms);
     
     // 周波数データをdBに変換
     for (let i = 0; i < Math.min(freqData.length, this.binCount); i++) {
