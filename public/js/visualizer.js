@@ -230,7 +230,8 @@ export class Visualizer {
       if (freq < this.minFreq || freq > this.maxFreq) continue;
 
       const x = this.freqToX(freq, binCount);
-      const db = magnitudes[binIndex] || this.minDB;
+      const val = magnitudes[binIndex];
+      const db = (val !== undefined) ? val : this.minDB;
       const y = this.dbToY(db);
 
       if (!started) {
@@ -291,7 +292,7 @@ export class Visualizer {
         if (freq < this.minFreq || freq > this.maxFreq) continue;
 
         const x = this.freqToX(freq, binCount);
-        const peakDb = peakHold[binIndex] || this.minDB;
+        const peakDb = (peakHold[binIndex] !== undefined) ? peakHold[binIndex] : this.minDB;
         const y = this.dbToY(peakDb);
 
         if (!started) {
@@ -382,7 +383,8 @@ export class Visualizer {
       }
 
       const binIndex = Math.floor((freq * binCount * 2) / sampleRate);
-      const db = magnitudes[Math.min(binIndex, binCount - 1)] || this.minDB;
+      const val = magnitudes[Math.min(binIndex, binCount - 1)];
+      const db = (val !== undefined) ? val : this.minDB;
 
       // dBを0-255にマップ
       const normalized = (db - this.minDB) / (this.maxDB - this.minDB);
@@ -511,7 +513,8 @@ export class Visualizer {
     }
 
     const binIndex = Math.floor((freq * binCount * 2) / sampleRate);
-    const db = magnitudes[Math.min(binIndex, binCount - 1)] || this.minDB;
+    const val = magnitudes[Math.min(binIndex, binCount - 1)];
+    const db = (val !== undefined) ? val : this.minDB;
 
     return { frequency: freq, db: db };
   }

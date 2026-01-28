@@ -877,12 +877,12 @@ class AudioAnalyzerApp {
       let currentPeak = this.peakHold[index];
       if (!Number.isFinite(currentPeak)) currentPeak = -100;
 
-      if (currentMag > currentPeak) {
+      if (currentMag >= currentPeak) {
           this.peakHold[index] = currentMag;
       } else if (this.peakHoldMode === 'decay') {
            // Auto Decay (3秒程度で減衰)
-           // 60FPS: -0.5dB/frame -> 30dB/sec -> 3secで90dB減衰 (ちょうどいい)
-           this.peakHold[index] = currentPeak - 0.5;
+           // 現在の音量(currentMag)を下回らないように Math.max を使用
+           this.peakHold[index] = Math.max(currentMag, currentPeak - 0.5);
       }
       // 'hold' modeの場合は減衰させない（維持）
   }
@@ -933,7 +933,6 @@ class AudioAnalyzerApp {
       if (this.useAnalyserFallback && this.analyserNode && !this.useMediaRecorderHack && !this.webCodecsReader) {
         this.processAnalyserData();
       }
-      
       this.visualizer.draw(
         this.magnitudes,
         this.peakHold,
