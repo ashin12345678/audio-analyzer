@@ -140,17 +140,27 @@ class AudioAnalyzerApp {
 
     try {
       this.log('Starting audio capture...', 'info');
+
+      // AudioContextをユーザージェスチャー内で即座に作成・再開
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (!this.audioContext) {
+        this.audioContext = new AudioContextClass();
+        this.log(`AudioContext created early, state: ${this.audioContext.state}`, 'info');
+      }
       
-      // マイクアクセス取得（モバイル対応設定）
+      if (this.audioContext.state === "suspended") {
+        this.log('Resuming AudioContext early...', 'info');
+        await this.audioContext.resume();
+        this.log(`AudioContext resumed, state: ${this.audioContext.state}`, 'success');
+      }
+      
+      // マイクアクセス取得（制約を極力なくす）
+      // Androidでは echoCancellation などの指定がトラブルの元になることがある
       const constraints = {
-        audio: {
-          echoCancellation: false,
-          noiseSuppression: false,
-          autoGainControl: false,
-        },
+        audio: true
       };
 
-      this.log('Requesting microphone access...', 'info');
+      this.log('Requesting microphone access (simple)...', 'info');
       this.mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
       this.log('Microphone access granted!', 'success');
       
@@ -180,22 +190,10 @@ class AudioAnalyzerApp {
           recorder.stop();
           await new Promise(r => recorder.onstop = r);
           const totalSize = chunks.reduce((s, c) => s + c.size, 0);
-          this.log(`MediaRecorder: ${chunks.length} chunks, ${totalSize} bytes`, totalSize > 0 ? 'success' : 'error');
+          this.log(`MediaRecorder: ${chunks.length} chunks, ${totalSize} bytes`, totalSize > 200 ? 'success' : 'error');
         } catch (e) {
           this.log(`MediaRecorder failed: ${e.message}`, 'error');
         }
-      }
-
-      // AudioContext作成
-      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-      this.audioContext = new AudioContextClass();
-      this.log(`AudioContext created, state: ${this.audioContext.state}`, 'info');
-
-      // モバイルブラウザではAudioContextがsuspended状態で始まることがある
-      if (this.audioContext.state === "suspended") {
-        this.log('AudioContext suspended, resuming...', 'warn');
-        await this.audioContext.resume();
-        this.log(`AudioContext resumed, state: ${this.audioContext.state}`, 'success');
       }
 
       // 実際のサンプリングレートを取得
