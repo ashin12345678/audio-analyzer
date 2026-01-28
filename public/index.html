@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="screen-orientation" content="landscape" />
+    <title>Audio Analyzer - リアルタイム音声解析</title>
+    <meta
+      name="description"
+      content="高性能WebAssemblyベースのリアルタイム音声スペクトラムアナライザー"
+    />
+    <link rel="stylesheet" href="css/styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <!-- メインキャンバス -->
+      <canvas id="visualizer"></canvas>
+
+      <!-- オーバーレイ情報 -->
+      <div id="overlay" class="overlay hidden">
+        <div class="overlay-content">
+          <span class="frequency">0 Hz</span>
+          <span class="separator">|</span>
+          <span class="level">-∞ dB</span>
+        </div>
+      </div>
+
+      <!-- コントロールパネル -->
+      <div id="controls" class="controls">
+        <!-- 左サイドコントロール -->
+        <div class="control-group left">
+          <button id="startBtn" class="btn btn-primary">
+            <span class="icon">▶</span>
+            <span class="label">START</span>
+          </button>
+          <button id="pauseBtn" class="btn btn-secondary hidden">
+            <span class="icon">⏸</span>
+            <span class="label">PAUSE</span>
+          </button>
+        </div>
+
+        <!-- 中央コントロール -->
+        <div class="control-group center">
+          <!-- モード切替 -->
+          <div class="mode-selector">
+            <button class="mode-btn active" data-mode="bar">BAR</button>
+            <button class="mode-btn" data-mode="wave">WAVE</button>
+            <button class="mode-btn" data-mode="spectrogram">SPECTRO</button>
+          </div>
+
+          <!-- スケール切替 -->
+          <div class="scale-selector">
+            <button class="scale-btn active" data-scale="log">LOG</button>
+            <button class="scale-btn" data-scale="linear">LIN</button>
+          </div>
+        </div>
+
+        <!-- 右サイドコントロール -->
+        <div class="control-group right">
+          <!-- ゲインスライダー -->
+          <div class="gain-control">
+            <label for="gainSlider">GAIN</label>
+            <input type="range" id="gainSlider" min="0.1" max="10" step="0.1" value="1" />
+            <span id="gainValue">0.0dB</span>
+          </div>
+
+          <!-- ピークホールド -->
+          <div class="peak-control">
+            <label class="toggle">
+              <input type="checkbox" id="peakHoldToggle" checked />
+              <span class="toggle-slider"></span>
+              <span class="toggle-label">PEAK</span>
+            </label>
+            <button id="resetPeakBtn" class="btn btn-small">RESET</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ステータスバー -->
+      <div id="status" class="status">
+        <span id="sampleRate">48000 Hz</span>
+        <span id="fftSize">FFT: 2048</span>
+        <span id="fps">0 FPS</span>
+      </div>
+
+      <!-- 初期ローディング -->
+      <div id="loading" class="loading">
+        <div class="spinner"></div>
+        <p>Initializing WebAssembly...</p>
+      </div>
+    </div>
+
+    <script type="module" src="js/main.js"></script>
+  </body>
+</html>

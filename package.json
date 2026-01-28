@@ -1,0 +1,20 @@
+{
+  "name": "audio-analyzer",
+  "version": "1.0.0",
+  "description": "高性能WebAssemblyベースのリアルタイム音声スペクトラムアナライザー",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "build": "build.bat",
+    "dev": "node server.js"
+  },
+  "keywords": [
+    "audio",
+    "analyzer",
+    "fft",
+    "webassembly",
+    "spectrum"
+  ],
+  "author": "",
+  "license": "MIT"
+}

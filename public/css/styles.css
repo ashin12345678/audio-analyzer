@@ -1,0 +1,487 @@
+/* ===================================
+   Audio Analyzer - スタイルシート
+   ダークテーマ、モバイルファースト
+   =================================== */
+
+:root {
+  /* カラーパレット */
+  --bg-primary: #0a0a0f;
+  --bg-secondary: #12121a;
+  --bg-tertiary: #1a1a25;
+  --accent-primary: #00d4ff;
+  --accent-secondary: #7b2cf5;
+  --accent-gradient: linear-gradient(135deg, #00d4ff 0%, #7b2cf5 100%);
+  --text-primary: #ffffff;
+  --text-secondary: #a0a0b0;
+  --text-muted: #606070;
+  --success: #00ff88;
+  --warning: #ffaa00;
+  --danger: #ff4466;
+
+  /* スペクトログラムカラー */
+  --spectrum-low: #001133;
+  --spectrum-mid: #0066ff;
+  --spectrum-high: #ff0066;
+  --spectrum-peak: #ffffff;
+
+  /* サイズ */
+  --control-height: 60px;
+  --status-height: 24px;
+  --border-radius: 8px;
+  --spacing: 12px;
+
+  /* アニメーション */
+  --transition-fast: 0.15s ease;
+  --transition-normal: 0.3s ease;
+}
+
+/* リセットとベース */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+body {
+  font-family: "Segoe UI", "Roboto", "Helvetica Neue", Arial, sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+/* アプリコンテナ */
+#app {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* メインキャンバス */
+#visualizer {
+  flex: 1;
+  width: 100%;
+  background: var(--bg-primary);
+  display: block;
+}
+
+/* オーバーレイ（スポット解析） */
+.overlay {
+  position: absolute;
+  pointer-events: none;
+  z-index: 10;
+  padding: 10px 20px;
+  background: rgba(0, 0, 0, 0.9);
+  border: 1px solid var(--accent-primary);
+  border-radius: var(--border-radius);
+  backdrop-filter: blur(8px);
+  transition: opacity var(--transition-fast);
+}
+
+.overlay.hidden {
+  opacity: 0;
+}
+
+.overlay-content {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+}
+
+.overlay .frequency {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--accent-primary);
+}
+
+.overlay .separator {
+  color: var(--text-muted);
+  font-size: 18px;
+}
+
+.overlay .level {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--success);
+}
+
+/* コントロールパネル */
+.controls {
+  position: absolute;
+  bottom: var(--status-height);
+  left: 0;
+  right: 0;
+  height: var(--control-height);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 var(--spacing);
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.9), rgba(0, 0, 0, 0.6));
+  backdrop-filter: blur(10px);
+  z-index: 20;
+}
+
+.control-group {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing);
+}
+
+.control-group.center {
+  flex: 1;
+  justify-content: center;
+}
+
+/* ボタン */
+.btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 16px;
+  border: none;
+  border-radius: var(--border-radius);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  min-width: 80px;
+}
+
+.btn-primary {
+  background: var(--accent-gradient);
+  color: var(--text-primary);
+  box-shadow: 0 4px 15px rgba(0, 212, 255, 0.3);
+}
+
+.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0, 212, 255, 0.4);
+}
+
+.btn-primary:active {
+  transform: translateY(0);
+}
+
+.btn-secondary {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--text-muted);
+}
+
+.btn-secondary:hover {
+  background: var(--bg-secondary);
+  border-color: var(--accent-primary);
+}
+
+.btn-small {
+  padding: 6px 10px;
+  min-width: 50px;
+  font-size: 10px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  border: 1px solid var(--text-muted);
+}
+
+.btn-small:hover {
+  border-color: var(--accent-primary);
+  color: var(--accent-primary);
+}
+
+.btn .icon {
+  font-size: 14px;
+}
+
+/* モード・スケールセレクター */
+.mode-selector,
+.scale-selector {
+  display: flex;
+  background: var(--bg-tertiary);
+  border-radius: var(--border-radius);
+  overflow: hidden;
+  border: 1px solid var(--text-muted);
+}
+
+.mode-btn,
+.scale-btn {
+  padding: 8px 14px;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.mode-btn:hover,
+.scale-btn:hover {
+  color: var(--text-primary);
+}
+
+.mode-btn.active,
+.scale-btn.active {
+  background: var(--accent-gradient);
+  color: var(--text-primary);
+}
+
+/* ゲインコントロール */
+.gain-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.gain-control label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+}
+
+.gain-control input[type="range"] {
+  width: 80px;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: var(--bg-tertiary);
+  border-radius: 2px;
+  outline: none;
+}
+
+.gain-control input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  background: var(--accent-primary);
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 212, 255, 0.4);
+}
+
+.gain-control input[type="range"]::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  background: var(--accent-primary);
+  border-radius: 50%;
+  cursor: pointer;
+  border: none;
+}
+
+#gainValue {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent-primary);
+  min-width: 35px;
+}
+
+/* ピークコントロール */
+.peak-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* トグルスイッチ */
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.toggle input {
+  display: none;
+}
+
+.toggle-slider {
+  width: 36px;
+  height: 20px;
+  background: var(--bg-tertiary);
+  border-radius: 10px;
+  position: relative;
+  transition: background var(--transition-fast);
+  border: 1px solid var(--text-muted);
+}
+
+.toggle-slider::after {
+  content: "";
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  background: var(--text-secondary);
+  border-radius: 50%;
+  top: 2px;
+  left: 2px;
+  transition: all var(--transition-fast);
+}
+
+.toggle input:checked + .toggle-slider {
+  background: var(--accent-primary);
+  border-color: var(--accent-primary);
+}
+
+.toggle input:checked + .toggle-slider::after {
+  left: 18px;
+  background: var(--text-primary);
+}
+
+.toggle-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+/* ステータスバー */
+.status {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: var(--status-height);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 20px;
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--bg-tertiary);
+  font-size: 10px;
+  color: var(--text-muted);
+  z-index: 20;
+}
+
+.status span {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* ローディング */
+.loading {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 20px;
+  background: var(--bg-primary);
+  z-index: 100;
+  transition: opacity 0.5s ease;
+}
+
+.loading.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.spinner {
+  width: 50px;
+  height: 50px;
+  border: 3px solid var(--bg-tertiary);
+  border-top-color: var(--accent-primary);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.loading p {
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+/* 非表示ユーティリティ */
+.hidden {
+  display: none !important;
+}
+
+/* レスポンシブ対応 */
+@media (max-width: 768px) {
+  .controls {
+    padding: 0 8px;
+  }
+
+  .control-group {
+    gap: 8px;
+  }
+
+  .btn {
+    padding: 8px 12px;
+    min-width: 60px;
+  }
+
+  .btn .label {
+    display: none;
+  }
+
+  .mode-btn,
+  .scale-btn {
+    padding: 6px 10px;
+    font-size: 10px;
+  }
+
+  .gain-control {
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .gain-control input[type="range"] {
+    width: 60px;
+  }
+}
+
+/* 横画面強制時のスタイル */
+@media (orientation: portrait) {
+  #app::before {
+    content: "横画面でご使用ください";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-size: 18px;
+    z-index: 200;
+  }
+}
+
+/* アニメーション */
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.recording {
+  animation: pulse 1s ease infinite;
+}
