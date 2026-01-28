@@ -458,30 +458,26 @@ class AudioAnalyzerApp {
              this.mediaRecorderSource = new MediaRecorder(this.mediaStream, { mimeType });
              
              this.mediaRecorderSource.ondataavailable = async (e) => {
+               this.log(`Recorder data: ${e.data.size} bytes`, 'info'); // デバッグログ追加
                if (e.data.size > 0) {
                  const arrayBuffer = await e.data.arrayBuffer();
                  try {
                    // データをデコード
                    const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
                    const pcm = audioBuffer.getChannelData(0);
+                   this.log(`Decoded PCM: ${pcm.length} samples`, 'info'); // デコード成功ログ
                    
                    // AnalyserNodeに直接書き込むためのバッファを用意
-                   // 注: AnalyserNodeには入力メソッドがないため、
-                   // 実際にはScriptProcessorNodeを使って「再生」しているように見せかけるか、
-                   // あるいはここで直接 this.magnitudes を計算してしまうのが早い。
-                   
-                   // 今回は可視化用なので、this.processPcmData(pcm) を呼んで
-                   // 内部状態を更新するのが最も低遅延で確実。
                    this.processRawPcm(pcm);
                    
                  } catch(err) {
-                   // デコードエラーは頻繁に起きうるのでログは控えめに
+                   this.log(`Decode failed: ${err.message}`, 'error'); // エラーログ詳細化
                  }
                }
              };
              
-             // 100msごとにデータを吐き出す
-             this.mediaRecorderSource.start(100);
+             // 安定性のため500msごとにデータを吐き出す（遅延は増えるが確実性優先）
+             this.mediaRecorderSource.start(500);
              this.log(`MediaRecorder Source started (${mimeType})`, 'success');
            }
         } else {
