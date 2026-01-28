@@ -109,6 +109,23 @@ class AudioAnalyzerApp {
         });
       });
     }
+    
+    // Force Resume機能
+    const resumeBtn = document.getElementById('resumeBtn');
+    if (resumeBtn) {
+      resumeBtn.addEventListener('click', async () => {
+        if (this.audioContext) {
+          try {
+            await this.audioContext.resume();
+            this.log(`Force Resumed! State: ${this.audioContext.state}`, 'success');
+          } catch(e) {
+            this.log(`Resume failed: ${e.message}`, 'error');
+          }
+        } else {
+          this.log('No AudioContext to resume', 'warn');
+        }
+      });
+    }
   }
   
   toggleTestTone() {
@@ -264,12 +281,12 @@ class AudioAnalyzerApp {
       // ユーザージェスチャー内でAudioContextを作成（既存なら再利用）
       const AudioContextClass = window.AudioContext || window.webkitAudioContext;
       if (!this.audioContext) {
-        // Zenfone 10などのためにサンプリングレートを明示
+        // Zenfone 10対策: サンプリングレートを強制せずブラウザに任せる
+        // 以前の48kHz強制が原因で不整合が起きている可能性があるため
         this.audioContext = new AudioContextClass({
-          sampleRate: 48000,
           latencyHint: 'interactive'
         });
-        this.log(`AudioContext created (48kHz), state: ${this.audioContext.state}`, 'info');
+        this.log(`AudioContext created (native rate), state: ${this.audioContext.state}`, 'info');
       }
       
       // マイクデバイスの選択
