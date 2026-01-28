@@ -657,11 +657,22 @@ class AudioAnalyzerApp {
     
     // 周波数領域（簡易RMSで代用）
     let sumSq = 0;
+    let maxAmp = 0; // 最大振幅チェック用
+    
     for (let i = 0; i < pcmData.length; i++) {
-        sumSq += pcmData[i] * pcmData[i];
+        const val = pcmData[i];
+        sumSq += val * val;
+        if (Math.abs(val) > maxAmp) maxAmp = Math.abs(val);
     }
     const rms = Math.sqrt(sumSq / pcmData.length);
     const db = 20 * Math.log10(rms + 1e-10); // 無音回避
+    
+    // ログ出力（波形データが本当に来ているか確認）
+    if (this.analyserDebugCount % 5 === 0) { // 少し頻度を下げる
+      const timeMin = Math.min(...this.timeDomain);
+      const timeMax = Math.max(...this.timeDomain);
+      this.log(`Hack Wave: AmpMax=${maxAmp.toFixed(4)}, DispRange=[${timeMin.toFixed(2)}, ${timeMax.toFixed(2)}]`, 'info');
+    }
     
     // 全ビンに適用（フラットだが反応はする）
     const val = Math.max(-100, Math.min(0, db));
