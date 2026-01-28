@@ -6,6 +6,80 @@
 import { Visualizer } from "./visualizer.js";
 import { UIController } from "./ui-controller.js";
 
+// 簡易FFTクラス
+class SimpleFFT {
+    constructor(size) {
+        this.size = size;
+        this.reverseTable = new Uint32Array(size);
+        this.sinTable = new Float32Array(size);
+        this.cosTable = new Float32Array(size);
+
+        let limit = 1;
+        let bit = size >> 1;
+        while (limit < size) {
+            for (let i = 0; i < limit; i++) {
+                this.reverseTable[i + limit] = this.reverseTable[i] + bit;
+            }
+            limit <<= 1;
+            bit >>= 1;
+        }
+
+        for (let i = 0; i < size; i++) {
+            this.sinTable[i] = Math.sin(-Math.PI / i);
+            this.cosTable[i] = Math.cos(-Math.PI / i);
+        }
+    }
+
+    calculateSpectrum(input) {
+        const n = this.size;
+        const real = new Float32Array(n);
+        const imag = new Float32Array(n);
+
+        // ビット反転コピー
+        for (let i = 0; i < n; i++) {
+            real[i] = input[this.reverseTable[i]];
+            imag[i] = 0;
+        }
+
+        // Butterfly演算
+        let halfSize = 1;
+        while (halfSize < n) {
+            const phaseShiftStepReal = Math.cos(-Math.PI / halfSize);
+            const phaseShiftStepImag = Math.sin(-Math.PI / halfSize);
+            
+            let currentPhaseShiftReal = 1.0;
+            let currentPhaseShiftImag = 0.0;
+
+            for (let fftStep = 0; fftStep < halfSize; fftStep++) {
+                for (let i = fftStep; i < n; i += 2 * halfSize) {
+                    const off = i + halfSize;
+                    const tr = currentPhaseShiftReal * real[off] - currentPhaseShiftImag * imag[off];
+                    const ti = currentPhaseShiftReal * imag[off] + currentPhaseShiftImag * real[off];
+
+                    real[off] = real[i] - tr;
+                    imag[off] = imag[i] - ti;
+                    real[i] += tr;
+                    imag[i] += ti;
+                }
+                
+                const tmpReal = currentPhaseShiftReal;
+                currentPhaseShiftReal = tmpReal * phaseShiftStepReal - currentPhaseShiftImag * phaseShiftStepImag;
+                currentPhaseShiftImag = tmpReal * phaseShiftStepImag + currentPhaseShiftImag * phaseShiftStepReal;
+            }
+            halfSize <<= 1;
+        }
+
+        // マグニチュード計算 (前半のみ)
+        const output = new Float32Array(n / 2);
+        for (let i = 0; i < n / 2; i++) {
+            // 正規化 (本来は 1/N だが、表示用に見やすく調整)
+            const mag = Math.sqrt(real[i] * real[i] + imag[i] * imag[i]) / n * 4.0;
+            output[i] = mag;
+        }
+        return output;
+    }
+}
+
 class AudioAnalyzerApp {
   constructor() {
     this.isInitialized = false;
@@ -668,21 +742,62 @@ class AudioAnalyzerApp {
 
     const db = 20 * Math.log10(finalRms + 1e-10); // 無音回避
     
-    // 全ビンに適用（フラットだが反応はする）with スムージング
-    const smoothing = 0.5; // 点滅防止用の係数
-    const val = Math.max(-100, Math.min(0, db));
+    // FFT解析 (JS実装)
+    if (!this.fft) {
+        this.fft = new SimpleFFT(this.fftSize);
+    }
+
+    // ウィンドウ関数適用とデータセット
+    // pcmDataの長さがfftSizeと異なる場合、最新のデータを切り出すかゼロ埋めする
+    const inputData = new Float32Array(this.fftSize);
+    const len = Math.min(pcmData.length, this.fftSize);
+    // 最新のデータを取得（最後尾から）
+    const offset = Math.max(0, pcmData.length - this.fftSize);
     
+    for (let i = 0; i < this.fftSize; i++) {
+        if (i < len) {
+            // Hann Window
+            const window = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (this.fftSize - 1)));
+            inputData[i] = pcmData[offset + i] * window;
+        } else {
+            inputData[i] = 0;
+        }
+    }
+
+    // FFT実行 (magnitudes取得)
+    const fftMags = this.fft.calculateSpectrum(inputData);
+
+    // スムージング係数 (0.0=即時反映, 1.0=変化なし)
+    // 点滅を防ぐために少し強めにかける
+    const smoothing = 0.3; 
+    
+    // データ更新
     for (let i = 0; i < this.binCount; i++) {
-        // 少しランダム性を入れて「動いている感」を出す
-        const noise = (Math.random() - 0.5) * 5; 
-        const targetVal = Math.max(-100, Math.min(0, val + noise));
+        // FFTの結果はリニアなのでdB変換
+        // fftMagsは 0~1 程度に正規化されている前提
+        const mag = fftMags[i];
+        let db = 20 * Math.log10(mag + 1e-10);
         
-        // スムージング処理: 前回値があれば混ぜる
+        // ゲイン適用 (Soft Gain)
+        const currentGain = this.gainNode ? this.gainNode.gain.value : 1.0;
+        db += 20 * Math.log10(currentGain);
+
+        // クランプ
+        db = Math.max(-100, Math.min(0, db));
+
+        // スムージング
         const currentVal = this.magnitudes[i] !== undefined ? this.magnitudes[i] : -100;
-        this.magnitudes[i] = currentVal * smoothing + targetVal * (1 - smoothing);
+        this.magnitudes[i] = currentVal * smoothing + db * (1 - smoothing);
         
-        if (this.magnitudes[i] > this.peakHold[i]) {
+        // Peak Hold更新
+        // バグ修正: いきなり下がるときにPeakが残るように
+        // Peakは常に減衰(Decay)させることで、「リセットされない」問題と「落ちすぎる」問題を両立
+        if (this.peakHold[i] === undefined || this.magnitudes[i] > this.peakHold[i]) {
             this.peakHold[i] = this.magnitudes[i];
+        } else {
+             // ゆらぎを持たせて自然に減衰 (-60dB/secくらい)
+             // 60FPS想定で 1フレームあたり -0.5dB
+             this.peakHold[i] -= 0.5;
         }
     }
   }

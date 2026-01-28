@@ -19,7 +19,8 @@ export class Visualizer {
     this.maxFreq = 20000;
     
     // レイアウト
-    this.paddingBottom = 30; // 軸ラベル用の余白
+    // レイアウト
+    this.paddingBottom = 100; // UIと被らないように余白を広げる
 
     // スペクトログラム設定
     this.spectrogramData = null;
