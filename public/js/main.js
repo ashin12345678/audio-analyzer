@@ -175,29 +175,36 @@ class AudioAnalyzerApp {
       this.gainNode = this.audioContext.createGain();
       this.log('Audio nodes created', 'info');
       
-      // AudioWorkletを試す、失敗したらAnalyserNodeにフォールバック
+      // モバイル判定
+      const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      
+      // AudioWorkletを試す（モバイルではスキップしてAnalyserNodeを使用）
       let useWorklet = false;
       
-      try {
-        this.log('Trying AudioWorklet...', 'info');
-        await this.audioContext.audioWorklet.addModule("./js/audio-processor.js");
-        this.workletNode = new AudioWorkletNode(this.audioContext, "audio-analyzer-processor");
-        
-        // 接続
-        source.connect(this.gainNode);
-        this.gainNode.connect(this.workletNode);
-        
-        // Workletからのメッセージ処理
-        this.workletNode.port.onmessage = (event) => {
-          if (event.data.type === "audioData") {
-            this.processAudioData(event.data.buffer);
-          }
-        };
-        
-        useWorklet = true;
-        this.log('Using AudioWorklet - OK!', 'success');
-      } catch (workletError) {
-        this.log(`AudioWorklet failed: ${workletError.message}`, 'warn');
+      if (isMobile) {
+        this.log('Mobile device detected - using AnalyserNode', 'info');
+      } else {
+        try {
+          this.log('Trying AudioWorklet...', 'info');
+          await this.audioContext.audioWorklet.addModule("./js/audio-processor.js");
+          this.workletNode = new AudioWorkletNode(this.audioContext, "audio-analyzer-processor");
+          
+          // 接続
+          source.connect(this.gainNode);
+          this.gainNode.connect(this.workletNode);
+          
+          // Workletからのメッセージ処理
+          this.workletNode.port.onmessage = (event) => {
+            if (event.data.type === "audioData") {
+              this.processAudioData(event.data.buffer);
+            }
+          };
+          
+          useWorklet = true;
+          this.log('Using AudioWorklet - OK!', 'success');
+        } catch (workletError) {
+          this.log(`AudioWorklet failed: ${workletError.message}`, 'warn');
+        }
       }
       
       // AudioWorkletが使えない場合はAnalyserNodeを使用
