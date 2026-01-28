@@ -32,6 +32,16 @@ export class UIController {
             this.app.togglePause();
         });
         
+        // 全画面ボタン
+        document.getElementById('fullscreenBtn').addEventListener('click', () => {
+            this.toggleFullscreen();
+        });
+        
+        // 折りたたみトグル
+        document.getElementById('toggleControlsBtn').addEventListener('click', () => {
+            this.toggleControls();
+        });
+        
         // モード切替
         document.querySelectorAll('.mode-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
@@ -85,6 +95,46 @@ export class UIController {
         
         // ダブルクリック/タップで一時停止
         this.canvas.addEventListener('dblclick', () => this.app.togglePause());
+        
+        // 全画面変更イベント
+        document.addEventListener('fullscreenchange', () => this.updateFullscreenButton());
+        document.addEventListener('webkitfullscreenchange', () => this.updateFullscreenButton());
+    }
+    
+    toggleFullscreen() {
+        if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+            // 全画面にする
+            const elem = document.documentElement;
+            if (elem.requestFullscreen) {
+                elem.requestFullscreen();
+            } else if (elem.webkitRequestFullscreen) {
+                elem.webkitRequestFullscreen();
+            }
+        } else {
+            // 全画面を解除
+            if (document.exitFullscreen) {
+                document.exitFullscreen();
+            } else if (document.webkitExitFullscreen) {
+                document.webkitExitFullscreen();
+            }
+        }
+    }
+    
+    updateFullscreenButton() {
+        const btn = document.getElementById('fullscreenBtn');
+        const isFullscreen = document.fullscreenElement || document.webkitFullscreenElement;
+        if (isFullscreen) {
+            btn.querySelector('.icon').textContent = '⛶';
+            btn.querySelector('.label').textContent = 'EXIT';
+        } else {
+            btn.querySelector('.icon').textContent = '⛶';
+            btn.querySelector('.label').textContent = 'FULL';
+        }
+    }
+    
+    toggleControls() {
+        const controls = document.getElementById('controls');
+        controls.classList.toggle('collapsed');
     }
     
     handleCanvasClick(e) {

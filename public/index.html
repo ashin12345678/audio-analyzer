@@ -33,51 +33,62 @@
 
       <!-- コントロールパネル -->
       <div id="controls" class="controls">
-        <!-- 左サイドコントロール -->
-        <div class="control-group left">
-          <button id="startBtn" class="btn btn-primary">
-            <span class="icon">▶</span>
-            <span class="label">START</span>
-          </button>
-          <button id="pauseBtn" class="btn btn-secondary hidden">
-            <span class="icon">⏸</span>
-            <span class="label">PAUSE</span>
-          </button>
-        </div>
+        <!-- 折りたたみトグル -->
+        <button id="toggleControlsBtn" class="toggle-controls-btn">
+          <span class="toggle-icon">▼</span>
+        </button>
 
-        <!-- 中央コントロール -->
-        <div class="control-group center">
-          <!-- モード切替 -->
-          <div class="mode-selector">
-            <button class="mode-btn active" data-mode="bar">BAR</button>
-            <button class="mode-btn" data-mode="wave">WAVE</button>
-            <button class="mode-btn" data-mode="spectrogram">SPECTRO</button>
+        <div id="controlsContent" class="controls-content">
+          <!-- 左サイドコントロール -->
+          <div class="control-group left">
+            <button id="startBtn" class="btn btn-primary">
+              <span class="icon">▶</span>
+              <span class="label">START</span>
+            </button>
+            <button id="pauseBtn" class="btn btn-secondary hidden">
+              <span class="icon">⏸</span>
+              <span class="label">PAUSE</span>
+            </button>
+            <button id="fullscreenBtn" class="btn btn-secondary">
+              <span class="icon">⛶</span>
+              <span class="label">FULL</span>
+            </button>
           </div>
 
-          <!-- スケール切替 -->
-          <div class="scale-selector">
-            <button class="scale-btn active" data-scale="log">LOG</button>
-            <button class="scale-btn" data-scale="linear">LIN</button>
-          </div>
-        </div>
+          <!-- 中央コントロール -->
+          <div class="control-group center">
+            <!-- モード切替 -->
+            <div class="mode-selector">
+              <button class="mode-btn active" data-mode="bar">BAR</button>
+              <button class="mode-btn" data-mode="wave">WAVE</button>
+              <button class="mode-btn" data-mode="spectrogram">SPECTRO</button>
+            </div>
 
-        <!-- 右サイドコントロール -->
-        <div class="control-group right">
-          <!-- ゲインスライダー -->
-          <div class="gain-control">
-            <label for="gainSlider">GAIN</label>
-            <input type="range" id="gainSlider" min="0.1" max="10" step="0.1" value="1" />
-            <span id="gainValue">0.0dB</span>
+            <!-- スケール切替 -->
+            <div class="scale-selector">
+              <button class="scale-btn active" data-scale="log">LOG</button>
+              <button class="scale-btn" data-scale="linear">LIN</button>
+            </div>
           </div>
 
-          <!-- ピークホールド -->
-          <div class="peak-control">
-            <label class="toggle">
-              <input type="checkbox" id="peakHoldToggle" checked />
-              <span class="toggle-slider"></span>
-              <span class="toggle-label">PEAK</span>
-            </label>
-            <button id="resetPeakBtn" class="btn btn-small">RESET</button>
+          <!-- 右サイドコントロール -->
+          <div class="control-group right">
+            <!-- ゲインスライダー -->
+            <div class="gain-control">
+              <label for="gainSlider">GAIN</label>
+              <input type="range" id="gainSlider" min="0.1" max="10" step="0.1" value="1" />
+              <span id="gainValue">0.0dB</span>
+            </div>
+
+            <!-- ピークホールド -->
+            <div class="peak-control">
+              <label class="toggle">
+                <input type="checkbox" id="peakHoldToggle" checked />
+                <span class="toggle-slider"></span>
+                <span class="toggle-label">PEAK</span>
+              </label>
+              <button id="resetPeakBtn" class="btn btn-small">RESET</button>
+            </div>
           </div>
         </div>
       </div>
