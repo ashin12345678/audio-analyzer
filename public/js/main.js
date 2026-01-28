@@ -93,6 +93,22 @@ class AudioAnalyzerApp {
         setTimeout(() => this.start(), 500);
       }
     });
+    
+    // ログコピー機能
+    const copyBtn = document.getElementById('copyLogBtn');
+    if (copyBtn) {
+      copyBtn.addEventListener('click', () => {
+        const logs = Array.from(this.debugLog.children)
+          .map(div => div.textContent)
+          .join('\n');
+        
+        navigator.clipboard.writeText(logs).then(() => {
+          this.log('Logs copied to clipboard!', 'success');
+        }).catch(err => {
+          this.log(`Copy failed: ${err.message}`, 'error');
+        });
+      });
+    }
   }
   
   toggleTestTone() {
@@ -245,17 +261,15 @@ class AudioAnalyzerApp {
     try {
       this.log('Starting audio capture...', 'info');
 
-      // AudioContextをユーザージェスチャー内で即座に作成・再開
+      // ユーザージェスチャー内でAudioContextを作成（既存なら再利用）
       const AudioContextClass = window.AudioContext || window.webkitAudioContext;
       if (!this.audioContext) {
-        this.audioContext = new AudioContextClass();
-        this.log(`AudioContext created early, state: ${this.audioContext.state}`, 'info');
-      }
-      
-      if (this.audioContext.state === "suspended") {
-        this.log('Resuming AudioContext early...', 'info');
-        await this.audioContext.resume();
-        this.log(`AudioContext resumed, state: ${this.audioContext.state}`, 'success');
+        // Zenfone 10などのためにサンプリングレートを明示
+        this.audioContext = new AudioContextClass({
+          sampleRate: 48000,
+          latencyHint: 'interactive'
+        });
+        this.log(`AudioContext created (48kHz), state: ${this.audioContext.state}`, 'info');
       }
       
       // マイクデバイスの選択
@@ -266,8 +280,8 @@ class AudioAnalyzerApp {
       let constraints = { audio: true };
       
       if (rawMode) {
-        // Raw Mode: 処理を極力無効化
-        this.log('Raw Mode: Disabling all processing', 'warn');
+        // Raw Mode: 処理を極力無効化 (Android Chrome向けの強力な設定)
+        this.log('Raw Mode: Disabling all processing with goog flags', 'warn');
         constraints = {
           audio: {
             deviceId: audioSource ? { exact: audioSource } : undefined,
@@ -277,7 +291,10 @@ class AudioAnalyzerApp {
             googEchoCancellation: false,
             googAutoGainControl: false,
             googNoiseSuppression: false,
-            googHighpassFilter: false
+            googHighpassFilter: false,
+            googAudioMirroring: false,
+            // 隠しパラメータ: 6 = VOICE_RECOGNITION, 7 = VOICE_COMMUNICATION, 9 = UNPROCESSED (Android)
+            googAudioSource: 9 
           }
         };
       } else {
@@ -292,6 +309,13 @@ class AudioAnalyzerApp {
       try {
         this.mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
         this.log('Microphone access granted!', 'success');
+        
+        // Android対策: ストリーム取得後に確実にコンテキストを再開
+        if (this.audioContext.state === "suspended") {
+          this.log('Resuming AudioContext after mic grant...', 'info');
+          await this.audioContext.resume();
+          this.log(`AudioContext resumed, state: ${this.audioContext.state}`, 'success');
+        }
         
         // 実際の制約を確認
         const track = this.mediaStream.getAudioTracks()[0];
