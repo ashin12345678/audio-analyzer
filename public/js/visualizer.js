@@ -17,6 +17,9 @@ export class Visualizer {
     this.maxDB = 0;
     this.minFreq = 20;
     this.maxFreq = 20000;
+    
+    // レイアウト
+    this.paddingBottom = 30; // 軸ラベル用の余白
 
     // スペクトログラム設定
     this.spectrogramData = null;
@@ -153,7 +156,8 @@ export class Visualizer {
   // dBを画面Y座標に変換
   dbToY(db) {
     const normalized = (db - this.minDB) / (this.maxDB - this.minDB);
-    return this.height * (1 - Math.max(0, Math.min(1, normalized)));
+    const plotHeight = this.height - this.paddingBottom;
+    return plotHeight * (1 - Math.max(0, Math.min(1, normalized)));
   }
 
   // 周波数を画面X座標に変換
@@ -209,10 +213,11 @@ export class Visualizer {
     this.ctx.fillRect(0, 0, this.width, this.height);
 
     const pointCount = Math.min(binCount, 512);
+    const bottomY = this.height - this.paddingBottom;
     
     // 折れ線グラフ用のグラデーション塗りつぶし
     this.ctx.beginPath();
-    this.ctx.moveTo(0, this.height);
+    this.ctx.moveTo(0, bottomY);
     
     let firstX = 0;
     let started = false;
@@ -228,7 +233,7 @@ export class Visualizer {
       const y = this.dbToY(db);
 
       if (!started) {
-        this.ctx.moveTo(x, this.height);
+        this.ctx.moveTo(x, bottomY);
         this.ctx.lineTo(x, y);
         firstX = x;
         started = true;
@@ -238,7 +243,7 @@ export class Visualizer {
     }
     
     // 塗りつぶしを閉じる
-    this.ctx.lineTo(this.width, this.height);
+    this.ctx.lineTo(this.width, bottomY);
     this.ctx.closePath();
     this.ctx.fillStyle = this.barGradient;
     this.ctx.globalAlpha = 0.3;
@@ -307,8 +312,9 @@ export class Visualizer {
 
     if (!timeDomain || timeDomain.length === 0) return;
 
-    const centerY = this.height / 2;
-    const amplitude = this.height * 0.4;
+    const plotHeight = this.height - this.paddingBottom;
+    const centerY = plotHeight / 2;
+    const amplitude = plotHeight * 0.4;
 
     // 波形描画
     this.ctx.strokeStyle = "#00d4ff";
@@ -344,20 +350,22 @@ export class Visualizer {
     if (!this.spectrogramData) return;
 
     const width = Math.floor(this.width);
-    const height = Math.floor(this.height);
+    const height = Math.floor(this.height - this.paddingBottom);
 
     // 既存データを1行下にシフト
+    const dataWidth = this.spectrogramData.width;
+    
     for (let y = height - 1; y > 0; y--) {
       for (let x = 0; x < width; x++) {
-        const srcIdx = ((y - 1) * width + x) * 4;
-        const dstIdx = (y * width + x) * 4;
+        const srcIdx = ((y - 1) * dataWidth + x) * 4;
+        const dstIdx = (y * dataWidth + x) * 4;
         this.spectrogramData.data[dstIdx] = this.spectrogramData.data[srcIdx];
         this.spectrogramData.data[dstIdx + 1] = this.spectrogramData.data[srcIdx + 1];
         this.spectrogramData.data[dstIdx + 2] = this.spectrogramData.data[srcIdx + 2];
       }
     }
 
-    // 新しい行を描画
+    // 新しい行を描画 (y=0)
     for (let x = 0; x < width; x++) {
       let freq;
       if (this.scale === "log") {
@@ -383,15 +391,29 @@ export class Visualizer {
       this.spectrogramData.data[idx + 2] = b;
       this.spectrogramData.data[idx + 3] = 255;
     }
+    
+    // パディング領域を黒で塗りつぶし
+    const totalHeight = this.spectrogramData.height;
+    for (let y = height; y < totalHeight; y++) {
+         for (let x = 0; x < width; x++) {
+             const idx = (y * dataWidth + x) * 4;
+             this.spectrogramData.data[idx] = 10;
+             this.spectrogramData.data[idx+1] = 10;
+             this.spectrogramData.data[idx+2] = 15;
+             this.spectrogramData.data[idx+3] = 255;
+         }
+    }
 
     // 描画
     this.ctx.putImageData(this.spectrogramData, 0, 0);
   }
 
   drawGrid() {
+    const bottomY = this.height - this.paddingBottom;
+    
     this.ctx.strokeStyle = "rgba(255, 255, 255, 0.15)";
     this.ctx.fillStyle = "rgba(255, 255, 255, 0.7)";
-    this.ctx.font = "12px 'Inter', sans-serif";
+    this.ctx.font = "11px 'Inter', sans-serif";
     this.ctx.textAlign = "center";
     this.ctx.lineWidth = 1;
 
@@ -401,7 +423,7 @@ export class Visualizer {
        freqs = [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000];
     } else {
        freqs = [];
-       for(let f=0; f<=this.maxFreq; f+=Math.floor(this.maxFreq/5)) {
+       for(let f=0; f<=this.maxFreq; f+=2000) {
          if(f>0) freqs.push(f);
        }
     }
@@ -413,16 +435,16 @@ export class Visualizer {
       const x = this.freqToX(freq, 1);
 
       this.ctx.moveTo(x, 0);
-      this.ctx.lineTo(x, this.height - 25);
+      this.ctx.lineTo(x, bottomY); // グラフ領域の下端まで
       
-      // 横軸ラベル（下部に表示）
+      // 横軸ラベル（パディング領域に表示）
       let label;
       if (freq >= 1000) {
         label = (freq / 1000) + "k";
       } else {
         label = freq;
       }
-      this.ctx.fillText(label, x, this.height - 8);
+      this.ctx.fillText(label, x, bottomY + 15); // パディングの中央あたり
     }
     this.ctx.stroke();
 
@@ -444,7 +466,7 @@ export class Visualizer {
         this.ctx.moveTo(0, y);
         this.ctx.lineTo(this.width, y);
         
-        this.ctx.fillText(`${db}`, 5, y - 3);
+        this.ctx.fillText(`${db}`, 15, y - 3);
       }
       this.ctx.stroke();
     }
