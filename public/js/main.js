@@ -168,6 +168,22 @@ class AudioAnalyzerApp {
         } catch (e) {
           this.log(`Audio element play failed: ${e.message}`, 'warn');
         }
+        
+        // MediaRecorderでマイクをテスト（1秒間録音してデータサイズを確認）
+        this.log('Testing mic with MediaRecorder...', 'info');
+        try {
+          const recorder = new MediaRecorder(this.mediaStream);
+          const chunks = [];
+          recorder.ondataavailable = (e) => chunks.push(e.data);
+          recorder.start();
+          await new Promise(r => setTimeout(r, 1000));
+          recorder.stop();
+          await new Promise(r => recorder.onstop = r);
+          const totalSize = chunks.reduce((s, c) => s + c.size, 0);
+          this.log(`MediaRecorder: ${chunks.length} chunks, ${totalSize} bytes`, totalSize > 0 ? 'success' : 'error');
+        } catch (e) {
+          this.log(`MediaRecorder failed: ${e.message}`, 'error');
+        }
       }
 
       // AudioContext作成
