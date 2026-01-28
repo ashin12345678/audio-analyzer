@@ -442,8 +442,10 @@ body {
   max-width: 320px;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 16px; /* 20px -> 16px に狭めた */
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+  max-height: 85vh; /* 画面高さ制限 */
+  overflow-y: auto; /* スクロール有効化 */
 }
 
 .settings-content h3 {
