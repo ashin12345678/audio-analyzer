@@ -276,6 +276,7 @@ class AudioAnalyzerApp {
 
     // 空のデータバッファを作成
     this.magnitudes = new Float32Array(this.binCount);
+    this.magnitudes.fill(-100); // 初期値は無音で埋める
     this.peakHold = new Float32Array(this.binCount);
     this.timeDomain = new Float32Array(this.fftSize);
     this.frequencies = new Float32Array(this.binCount);
@@ -585,12 +586,18 @@ class AudioAnalyzerApp {
     const rms = Math.sqrt(sumSq / pcmData.length);
     const db = 20 * Math.log10(rms + 1e-10); // 無音回避
     
-    // 全ビンに適用（フラットだが反応はする）
+    // 全ビンに適用（フラットだが反応はする）with スムージング
+    const smoothing = 0.5; // 点滅防止用の係数
     const val = Math.max(-100, Math.min(0, db));
+    
     for (let i = 0; i < this.binCount; i++) {
         // 少しランダム性を入れて「動いている感」を出す
         const noise = (Math.random() - 0.5) * 5; 
-        this.magnitudes[i] = Math.max(-100, Math.min(0, val + noise));
+        const targetVal = Math.max(-100, Math.min(0, val + noise));
+        
+        // スムージング処理: 前回値があれば混ぜる
+        const currentVal = this.magnitudes[i] !== undefined ? this.magnitudes[i] : -100;
+        this.magnitudes[i] = currentVal * smoothing + targetVal * (1 - smoothing);
         
         if (this.magnitudes[i] > this.peakHold[i]) {
             this.peakHold[i] = this.magnitudes[i];
@@ -677,6 +684,8 @@ class AudioAnalyzerApp {
 
   setShowPeakHold(show) {
     this.visualizer.setShowPeakHold(show);
+    // 切り替え時にリセットすることで「昔のピーク」が残るのを防ぐ
+    this.resetPeakHold();
   }
 
   resetPeakHold() {
