@@ -361,6 +361,10 @@ class AudioAnalyzerApp {
   processAnalyserData() {
     if (this.isPaused) return;
     
+    // デバッグ用カウンター初期化
+    if (!this.analyserDebugCount) this.analyserDebugCount = 0;
+    this.analyserDebugCount++;
+    
     // 周波数データを取得
     const freqData = new Uint8Array(this.analyserNode.frequencyBinCount);
     this.analyserNode.getByteFrequencyData(freqData);
@@ -368,6 +372,20 @@ class AudioAnalyzerApp {
     // 時間領域データを取得
     const timeData = new Uint8Array(this.analyserNode.fftSize);
     this.analyserNode.getByteTimeDomainData(timeData);
+    
+    // 5秒ごとに生データをログ
+    if (this.analyserDebugCount % 300 === 1) {
+      const maxRaw = Math.max(...freqData);
+      const sum = freqData.reduce((a, b) => a + b, 0);
+      const first10 = Array.from(freqData.slice(0, 10)).join(',');
+      this.log(`Raw: max=${maxRaw}, sum=${sum}, bins=${freqData.length}`, 'info');
+      this.log(`First10: [${first10}]`, 'info');
+      
+      // 時間領域データも確認（128が無音の中心値）
+      const timeMax = Math.max(...timeData);
+      const timeMin = Math.min(...timeData);
+      this.log(`Time domain: min=${timeMin}, max=${timeMax}`, 'info');
+    }
     
     // 周波数データをdBに変換
     const gain = this.gainNode ? this.gainNode.gain.value : 1;
