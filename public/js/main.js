@@ -458,27 +458,48 @@ class AudioAnalyzerApp {
              this.mediaRecorderSource = new MediaRecorder(this.mediaStream, { mimeType });
              
              this.mediaRecorderSource.ondataavailable = async (e) => {
-               this.log(`Recorder data: ${e.data.size} bytes`, 'info'); // デバッグログ追加
-               if (e.data.size > 0) {
+               this.log(`Rec data: ${e.data.size} bytes`, 'info'); 
+               if (e.data.size > 0 && this.isRunning) {
                  const arrayBuffer = await e.data.arrayBuffer();
                  try {
-                   // データをデコード
                    const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
                    const pcm = audioBuffer.getChannelData(0);
-                   this.log(`Decoded PCM: ${pcm.length} samples`, 'info'); // デコード成功ログ
-                   
-                   // AnalyserNodeに直接書き込むためのバッファを用意
+                   this.log(`Decoded: ${Math.floor(pcm.length)} samples`, 'info');
                    this.processRawPcm(pcm);
-                   
                  } catch(err) {
-                   this.log(`Decode failed: ${err.message}`, 'error'); // エラーログ詳細化
+                   this.log(`Dec err: ${err.message}`, 'error');
                  }
                }
              };
              
-             // 安定性のため500msごとにデータを吐き出す（遅延は増えるが確実性優先）
-             this.mediaRecorderSource.start(500);
-             this.log(`MediaRecorder Source started (${mimeType})`, 'success');
+             // Stopイベントで再開ループを作る（常にヘッダー付きデータを取るため）
+             this.mediaRecorderSource.onstop = () => {
+               if (this.isRunning && this.mediaRecorderSource) {
+                 // 少し間隔を空けないとブラウザ負荷が高くなる
+                 setTimeout(() => {
+                    if(this.mediaRecorderSource && this.mediaRecorderSource.state === 'inactive') {
+                      this.mediaRecorderSource.start();
+                    }
+                 }, 50); 
+               }
+             };
+             
+             // 500msごとにデータを吐き出すために、自前でstopを呼ぶループ
+             const loopRecorder = () => {
+               if (!this.isRunning || !this.mediaRecorderSource) return;
+               
+               if (this.mediaRecorderSource.state === 'recording') {
+                 this.mediaRecorderSource.stop(); // これで dataavailable -> stop -> onstop -> start が回る
+               }
+               
+               // 次の停止スケジュール
+               setTimeout(loopRecorder, 500);
+             };
+             
+             this.mediaRecorderSource.start();
+             setTimeout(loopRecorder, 500); // 最初の停止スケジュール
+             
+             this.log(`MediaRecorder Source started (Loop Mode)`, 'success');
            }
         } else {
            // PCなど通常環境
