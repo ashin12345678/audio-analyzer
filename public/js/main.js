@@ -425,6 +425,26 @@ class AudioAnalyzerApp {
         source.connect(this.gainNode);
         this.gainNode.connect(this.analyserNode);
         
+        // Android Chrome対策: ScriptProcessorNodeで強制的にオーディオを駆動する
+        // AnalyserNodeだけではデータが流れてこない場合があるため、onaudioprocessイベントで発火させる
+        if (!this.dummyProcessor) {
+          try {
+            this.dummyProcessor = this.audioContext.createScriptProcessor(256, 1, 1);
+            this.dummyProcessor.onaudioprocess = (e) => {
+               // 何もしないが、このイベントが発火することでデータフローが維持される
+               const input = e.inputBuffer.getChannelData(0);
+               // 極めて小さな音量を出力にコピーしてコンパイラによる削除を防ぐ（念のため）
+               const output = e.outputBuffer.getChannelData(0);
+               for(let k=0; k<input.length; k++) output[k] = 0; 
+            };
+            this.gainNode.connect(this.dummyProcessor);
+            this.dummyProcessor.connect(this.audioContext.destination);
+            this.log('Dummy ScriptProcessor attached to force plumbing', 'info');
+          } catch(e) {
+            this.log(`ScriptProcessor failed: ${e.message}`, 'warn');
+          }
+        }
+        
         // ミュート状態でdestinationにも接続（オーディオパイプラインを活性化）
         const silentGain = this.audioContext.createGain();
         silentGain.gain.value = 0; // 無音
