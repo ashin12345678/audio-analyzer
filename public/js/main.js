@@ -153,6 +153,22 @@ class AudioAnalyzerApp {
       this.log('Requesting microphone access...', 'info');
       this.mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
       this.log('Microphone access granted!', 'success');
+      
+      // Android対策: MediaStreamをAudio要素に接続して活性化
+      const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      if (isMobile) {
+        this.log('Mobile: Activating stream via Audio element...', 'info');
+        const audioEl = document.createElement('audio');
+        audioEl.srcObject = this.mediaStream;
+        audioEl.muted = true; // ハウリング防止
+        audioEl.volume = 0;
+        try {
+          await audioEl.play();
+          this.log('Audio element playing (muted)', 'success');
+        } catch (e) {
+          this.log(`Audio element play failed: ${e.message}`, 'warn');
+        }
+      }
 
       // AudioContext作成
       const AudioContextClass = window.AudioContext || window.webkitAudioContext;
@@ -174,9 +190,6 @@ class AudioAnalyzerApp {
       const source = this.audioContext.createMediaStreamSource(this.mediaStream);
       this.gainNode = this.audioContext.createGain();
       this.log('Audio nodes created', 'info');
-      
-      // モバイル判定
-      const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
       
       // AudioWorkletを試す（モバイルではスキップしてAnalyserNodeを使用）
       let useWorklet = false;
