@@ -127,12 +127,8 @@ class AudioAnalyzerApp {
         },
       };
 
-      // モバイルでは余計な制約を付けない
-      if (!/Android|iPhone|iPad/i.test(navigator.userAgent)) {
-        constraints.audio.sampleRate = this.sampleRate;
-      }
-
       this.mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+      console.log('Microphone access granted');
 
       // AudioContext作成
       const AudioContextClass = window.AudioContext || window.webkitAudioContext;
@@ -147,24 +143,50 @@ class AudioAnalyzerApp {
       this.sampleRate = this.audioContext.sampleRate;
       console.log("AudioContext started, sampleRate:", this.sampleRate);
 
-      // AudioWorklet登録
-      await this.audioContext.audioWorklet.addModule("./js/audio-processor.js");
-
       // ノード作成
       const source = this.audioContext.createMediaStreamSource(this.mediaStream);
       this.gainNode = this.audioContext.createGain();
-      this.workletNode = new AudioWorkletNode(this.audioContext, "audio-analyzer-processor");
-
-      // 接続
-      source.connect(this.gainNode);
-      this.gainNode.connect(this.workletNode);
-
-      // Workletからのメッセージ処理
-      this.workletNode.port.onmessage = (event) => {
-        if (event.data.type === "audioData") {
-          this.processAudioData(event.data.buffer);
-        }
-      };
+      
+      // AudioWorkletを試す、失敗したらAnalyserNodeにフォールバック
+      let useWorklet = false;
+      
+      try {
+        await this.audioContext.audioWorklet.addModule("./js/audio-processor.js");
+        this.workletNode = new AudioWorkletNode(this.audioContext, "audio-analyzer-processor");
+        
+        // 接続
+        source.connect(this.gainNode);
+        this.gainNode.connect(this.workletNode);
+        
+        // Workletからのメッセージ処理
+        this.workletNode.port.onmessage = (event) => {
+          if (event.data.type === "audioData") {
+            this.processAudioData(event.data.buffer);
+          }
+        };
+        
+        useWorklet = true;
+        console.log("Using AudioWorklet for audio processing");
+      } catch (workletError) {
+        console.warn("AudioWorklet not available, using AnalyserNode fallback:", workletError);
+      }
+      
+      // AudioWorkletが使えない場合はAnalyserNodeを使用
+      if (!useWorklet) {
+        this.analyserNode = this.audioContext.createAnalyser();
+        this.analyserNode.fftSize = this.fftSize;
+        this.analyserNode.smoothingTimeConstant = 0.3;
+        
+        // 接続
+        source.connect(this.gainNode);
+        this.gainNode.connect(this.analyserNode);
+        
+        // フォールバック用のデータ配列を初期化
+        this.useFallbackFFT();
+        this.useAnalyserFallback = true;
+        
+        console.log("Using AnalyserNode for audio processing");
+      }
 
       this.isRunning = true;
       this.uiController.showPauseButton();
@@ -238,6 +260,11 @@ class AudioAnalyzerApp {
     const loop = () => {
       if (!this.isRunning) return;
 
+      // AnalyserNodeフォールバック時はここでデータを取得
+      if (this.useAnalyserFallback && this.analyserNode) {
+        this.processAnalyserData();
+      }
+
       // 描画
       this.visualizer.draw(
         this.magnitudes,
@@ -257,6 +284,38 @@ class AudioAnalyzerApp {
     };
 
     loop();
+  }
+  
+  // AnalyserNodeからデータを取得して処理
+  processAnalyserData() {
+    if (this.isPaused) return;
+    
+    // 周波数データを取得
+    const freqData = new Uint8Array(this.analyserNode.frequencyBinCount);
+    this.analyserNode.getByteFrequencyData(freqData);
+    
+    // 時間領域データを取得
+    const timeData = new Uint8Array(this.analyserNode.fftSize);
+    this.analyserNode.getByteTimeDomainData(timeData);
+    
+    // 周波数データをdBに変換
+    const gain = this.gainNode ? this.gainNode.gain.value : 1;
+    for (let i = 0; i < Math.min(freqData.length, this.binCount); i++) {
+      // 0-255を-100dB〜0dBに変換
+      const normalized = freqData[i] / 255;
+      const db = normalized > 0 ? 20 * Math.log10(normalized) : -100;
+      this.magnitudes[i] = Math.max(-100, Math.min(0, db));
+      
+      // ピークホールド更新
+      if (this.magnitudes[i] > this.peakHold[i]) {
+        this.peakHold[i] = this.magnitudes[i];
+      }
+    }
+    
+    // 時間領域データを正規化
+    for (let i = 0; i < Math.min(timeData.length, this.fftSize); i++) {
+      this.timeDomain[i] = (timeData[i] - 128) / 128;
+    }
   }
 
   stop() {
