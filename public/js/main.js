@@ -426,23 +426,61 @@ class AudioAnalyzerApp {
         this.gainNode.connect(this.analyserNode);
         
         // Android Chrome対策: ScriptProcessorNodeで強制的にオーディオを駆動する
-        // AnalyserNodeだけではデータが流れてこない場合があるため、onaudioprocessイベントで発火させる
         if (!this.dummyProcessor) {
           try {
-            this.dummyProcessor = this.audioContext.createScriptProcessor(256, 1, 1);
+            // バッファサイズを4096に増やして負荷を下げる
+            this.dummyProcessor = this.audioContext.createScriptProcessor(4096, 1, 1);
+            
+            let hasLoggedData = false;
+            
             this.dummyProcessor.onaudioprocess = (e) => {
-               // 何もしないが、このイベントが発火することでデータフローが維持される
                const input = e.inputBuffer.getChannelData(0);
-               // 極めて小さな音量を出力にコピーしてコンパイラによる削除を防ぐ（念のため）
                const output = e.outputBuffer.getChannelData(0);
-               for(let k=0; k<input.length; k++) output[k] = 0; 
+               
+               // データが来ているかチェック（最初の1回だけログ）
+               if (!hasLoggedData) {
+                 let hasSignal = false;
+                 let maxVal = 0;
+                 for(let i=0; i<input.length; i++) {
+                   if (input[i] !== 0) {
+                     hasSignal = true;
+                     if (Math.abs(input[i]) > maxVal) maxVal = Math.abs(input[i]);
+                   }
+                 }
+                 
+                 if (hasSignal) {
+                   this.log(`ScriptProcessor received data! Max: ${maxVal.toFixed(4)}`, 'success');
+                   hasLoggedData = true;
+                 }
+               }
+               
+               // ソフトウェアパススルー（入力を出力にコピー）
+               // これにより、もしWeb Audioの内部ルーティングが死んでいても、ここで生き返らせる
+               for(let k=0; k<input.length; k++) {
+                 output[k] = input[k];
+               }
             };
-            this.gainNode.connect(this.dummyProcessor);
+            
+            // 接続順序変更: Source -> Processor -> Gain -> Analyser
+            // これによりProcessorが確実にデータをインターセプトする
+            source.disconnect();
+            source.connect(this.dummyProcessor);
+            this.dummyProcessor.connect(this.gainNode);
+            // GainはすでにAnalyserに接続されている
+            
+            // さらにProcessorをDestinationにもつなぐ（必須）
             this.dummyProcessor.connect(this.audioContext.destination);
-            this.log('Dummy ScriptProcessor attached to force plumbing', 'info');
+            
+            this.log('Software Passthrough activted (Source -> Processor -> Gain)', 'info');
           } catch(e) {
             this.log(`ScriptProcessor failed: ${e.message}`, 'warn');
+            // 失敗時は通常接続に戻す
+            source.connect(this.gainNode);
           }
+        } else {
+           // 通常接続
+           source.connect(this.gainNode);
+           this.gainNode.connect(this.analyserNode);
         }
         
         // ミュート状態でdestinationにも接続（オーディオパイプラインを活性化）
