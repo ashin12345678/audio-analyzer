@@ -154,8 +154,17 @@ class AudioAnalyzerApp {
     const entry = document.createElement('div');
     entry.className = `log-entry log-${type}`;
     entry.textContent = `[${time}] ${message}`;
+    
+    // スクロール位置が一番下に近いかチェック（スマートスクロール）
+    const isScrolledToBottom = this.debugLog.scrollHeight - this.debugLog.clientHeight <= this.debugLog.scrollTop + 50;
+    
     this.debugLog.appendChild(entry);
-    this.debugLog.scrollTop = this.debugLog.scrollHeight;
+    
+    // 一番下にいた場合のみ自動スクロール
+    if (isScrolledToBottom) {
+      this.debugLog.scrollTop = this.debugLog.scrollHeight;
+    }
+    
     console.log(`[${type}] ${message}`);
   }
 
