@@ -446,9 +446,9 @@ class AudioAnalyzerApp {
         // MediaStreamSourceが機能しない（無音になる）端末のために、
         // MediaRecorder経由でデータを吸い出してAudioContextに注入する
         
-        const useMediaRecorderHack = /Android/i.test(navigator.userAgent);
+        this.useMediaRecorderHack = /Android/i.test(navigator.userAgent);
         
-        if (useMediaRecorderHack) {
+        if (this.useMediaRecorderHack) {
            this.log('Applying MediaRecorder Hack (SourceNode is broken)...', 'warn');
            
            if (!this.mediaRecorderSource) {
@@ -600,7 +600,9 @@ class AudioAnalyzerApp {
       frameCount++;
 
       // AnalyserNodeフォールバック時はここでデータを取得
-      if (this.useAnalyserFallback && this.analyserNode) {
+      // ただし、MediaRecorder Hackを使っている場合はデータ更新が非同期で行われるため、ここでの取得はスキップする
+      // (そうしないと processAnalyserData が無音データで上書きしてしまう)
+      if (this.useAnalyserFallback && this.analyserNode && !this.useMediaRecorderHack) {
         this.processAnalyserData();
       }
       
@@ -608,7 +610,7 @@ class AudioAnalyzerApp {
       const now = Date.now();
       if (now - lastLogTime > 3000) {
         const maxMag = this.magnitudes ? Math.max(...this.magnitudes) : -100;
-        const mode = this.useAnalyserFallback ? 'AnalyserNode' : 'AudioWorklet';
+        const mode = this.useMediaRecorderHack ? 'MediaRecorderHack' : (this.useAnalyserFallback ? 'AnalyserNode' : 'AudioWorklet');
         this.log(`[${mode}] frames:${frameCount}, maxdB:${maxMag.toFixed(1)}`, 'info');
         frameCount = 0;
         lastLogTime = now;
