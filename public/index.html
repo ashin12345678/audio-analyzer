@@ -97,7 +97,15 @@
       <div id="debugPanel" class="debug-panel">
         <div class="debug-header">
           <span>Debug Log</span>
-          <button id="clearDebugBtn" class="debug-clear">Clear</button>
+          <div class="debug-controls">
+            <button id="testToneBtn" class="debug-btn">Test Tone</button>
+            <button id="clearDebugBtn" class="debug-clear">Clear</button>
+          </div>
+        </div>
+        <div class="debug-options">
+          <select id="audioSourceSelect" class="debug-select">
+            <option value="">Default Microphone</option>
+          </select>
         </div>
         <div id="debugLog" class="debug-log"></div>
       </div>

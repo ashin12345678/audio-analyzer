@@ -48,16 +48,103 @@ class AudioAnalyzerApp {
   }
   
   // デバッグログ関数
-  setupDebug() {
+  async setupDebug() {
     document.getElementById('clearDebugBtn').addEventListener('click', () => {
       this.debugLog.innerHTML = '';
     });
+    
+    // マイクデバイス一覧取得
+    if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const audioInputs = devices.filter(d => d.kind === 'audioinput');
+        const select = document.getElementById('audioSourceSelect');
+        
+        select.innerHTML = '<option value="">Default Microphone</option>';
+        audioInputs.forEach((device, index) => {
+          const option = document.createElement('option');
+          option.value = device.deviceId;
+          option.text = device.label || `Microphone ${index + 1}`;
+          select.appendChild(option);
+        });
+        
+        select.addEventListener('change', () => {
+          if (this.isRunning) {
+            this.stop();
+            setTimeout(() => this.start(), 500);
+          }
+        });
+        
+        this.log(`Found ${audioInputs.length} microphone(s)`, 'info');
+      } catch (e) {
+        this.log(`Error listing devices: ${e.message}`, 'error');
+      }
+    }
+    
+    // テストトーン機能
+    document.getElementById('testToneBtn').addEventListener('click', () => {
+      this.toggleTestTone();
+    });
   }
   
+  toggleTestTone() {
+    if (this.oscillator) {
+      // 停止
+      try {
+        this.oscillator.stop();
+        this.oscillator.disconnect();
+        this.oscillator = null;
+        document.getElementById('testToneBtn').textContent = 'Test Tone';
+        document.getElementById('testToneBtn').classList.remove('active');
+        this.log('Test tone stopped', 'info');
+      } catch (e) {}
+      return;
+    }
+    
+    // 開始
+    if (!this.audioContext) {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      this.audioContext = new AudioContextClass();
+    }
+    if (this.audioContext.state === 'suspended') {
+      this.audioContext.resume();
+    }
+    
+    this.oscillator = this.audioContext.createOscillator();
+    this.oscillator.type = 'sine';
+    this.oscillator.frequency.value = 440; // 440Hz
+    
+    // GainNodeを作成して音量を調整
+    const toneGain = this.audioContext.createGain();
+    toneGain.gain.value = 0.5;
+    
+    this.oscillator.connect(toneGain);
+    toneGain.connect(this.audioContext.destination);
+    
+    // アナライザーにも送る（ゲインノード経由で）
+    if (!this.gainNode) this.gainNode = this.audioContext.createGain();
+    toneGain.connect(this.gainNode);
+    
+    if (this.analyserNode) {
+       this.gainNode.connect(this.analyserNode);
+    }
+    
+    this.oscillator.start();
+    document.getElementById('testToneBtn').textContent = 'Stop Tone';
+    document.getElementById('testToneBtn').classList.add('active');
+    
+    // アニメーションループが動いていなければ開始
+    if (!this.isRunning) {
+      this.isRunning = true;
+      this.startAnimationLoop();
+    }
+    this.log('Test tone started (440Hz)', 'success');
+  }
+
   log(message, type = 'info') {
+    const time = new Date().toLocaleTimeString();
     const entry = document.createElement('div');
     entry.className = `log-entry log-${type}`;
-    const time = new Date().toLocaleTimeString();
     entry.textContent = `[${time}] ${message}`;
     this.debugLog.appendChild(entry);
     this.debugLog.scrollTop = this.debugLog.scrollHeight;
@@ -154,15 +241,30 @@ class AudioAnalyzerApp {
         this.log(`AudioContext resumed, state: ${this.audioContext.state}`, 'success');
       }
       
+      // マイクデバイスの選択
+      const audioSource = document.getElementById('audioSourceSelect').value;
+      
       // マイクアクセス取得（制約を極力なくす）
       // Androidでは echoCancellation などの指定がトラブルの元になることがある
       const constraints = {
-        audio: true
+        audio: audioSource ? { deviceId: { exact: audioSource } } : true
       };
-
-      this.log('Requesting microphone access (simple)...', 'info');
-      this.mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
-      this.log('Microphone access granted!', 'success');
+      
+      this.log(`Requesting mic (deviceId: ${audioSource ? audioSource : 'default'})...`, 'info');
+      
+      try {
+        this.mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+        this.log('Microphone access granted!', 'success');
+      } catch (err) {
+        // 特定のデバイスで失敗した場合はデフォルトで再試行
+        if (audioSource) {
+           this.log(`Specific device failed (${err.message}), trying default...`, 'warn');
+           this.mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+           this.log('Default mic fallback granted!', 'success');
+        } else {
+           throw err;
+        }
+      }
       
       // Android対策: MediaStreamをAudio要素に接続して活性化
       const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
