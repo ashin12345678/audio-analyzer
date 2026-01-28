@@ -385,9 +385,9 @@ class AudioAnalyzerApp {
       }
       
       // 優先度2: WebCodecs (Android向け高速化)
-      // Android ChromeでMediaStreamTrackProcessorが使えるならこれを使う
-      // バグ回避のため、Web Audio APIを通さず直接Streamから取る
-      if (window.MediaStreamTrackProcessor) {
+      // Zenfone 10で動作不安定なため一時的に無効化 (User Request)
+      // if (window.MediaStreamTrackProcessor) {
+      if (false && window.MediaStreamTrackProcessor) {
         try {
            await this.setupWebCodecs(source.mediaStream);
            this.log('Pipeline: WebCodecs (Priority 2)', 'success');
@@ -489,13 +489,13 @@ class AudioAnalyzerApp {
          }
       };
        
-      this.mediaRecorderSource.onstop = () => {
+       this.mediaRecorderSource.onstop = () => {
          if (this.isRunning && this.mediaRecorderSource) {
            setTimeout(() => {
               if(this.mediaRecorderSource && this.mediaRecorderSource.state === 'inactive') {
                 this.mediaRecorderSource.start();
               }
-           }, 50); 
+           }, 20); // リスタート待機時間を短縮 (50ms -> 20ms)
          }
       };
        
@@ -504,11 +504,11 @@ class AudioAnalyzerApp {
          if (this.mediaRecorderSource.state === 'recording') {
            this.mediaRecorderSource.stop();
          }
-         setTimeout(loopRecorder, 500);
+         setTimeout(loopRecorder, 150); // 録音時間を短縮 (500ms -> 150ms)
       };
        
       this.mediaRecorderSource.start();
-      setTimeout(loopRecorder, 500);
+      setTimeout(loopRecorder, 150);
       
       this.log('Pipeline: MediaRecorder Hack (Priority 4)', 'success');
   }
