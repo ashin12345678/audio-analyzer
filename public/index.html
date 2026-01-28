@@ -96,33 +96,34 @@
           </div>
         </div>
 
-        <!-- 詳細設定パネル (オーバーレイ) -->
-        <div id="settingsPanel" class="settings-panel hidden">
-            <div class="settings-content">
-               <h3>Analyzer Settings</h3>
-               
-               <div class="setting-item">
-                 <label>Window Function</label>
-                 <select id="windowFunctionSelect">
-                   <option value="hanning" selected>Hanning (Standard)</option>
-                   <option value="blackman">Blackman-Harris (High Res)</option>
-                   <option value="rectangular">Rectangular (None)</option>
-                 </select>
-               </div>
+      </div><!-- /#controls -->
 
-               <div class="setting-item">
-                 <label>Peak Hold Mode</label>
-                 <select id="peakModeSelect">
-                   <option value="decay" selected>Auto Decay (3s)</option>
-                   <option value="hold">Infinity Hold</option>
-                   <option value="off">Off</option>
-                 </select>
-                 <button id="resetPeakBtn" class="btn btn-small">RESET NOW</button>
-               </div>
-               
-               <button id="closeSettingsBtn" class="btn btn-primary full-width">CLOSE</button>
-            </div>
-        </div>
+      <!-- 詳細設定パネル (全画面オーバーレイ) -->
+      <div id="settingsPanel" class="settings-panel hidden">
+          <div class="settings-content">
+             <h3>Analyzer Settings</h3>
+             
+             <div class="setting-item">
+               <label>Window Function</label>
+               <select id="windowFunctionSelect">
+                 <option value="hanning" selected>Hanning (Standard)</option>
+                 <option value="blackman">Blackman-Harris (High Res)</option>
+                 <option value="rectangular">Rectangular (None)</option>
+               </select>
+             </div>
+
+             <div class="setting-item">
+               <label>Peak Hold Mode</label>
+               <select id="peakModeSelect">
+                 <option value="decay" selected>Auto Decay (3s)</option>
+                 <option value="hold">Infinity Hold</option>
+                 <option value="off">Off</option>
+               </select>
+               <button id="resetPeakBtn" class="btn btn-small">RESET NOW</button>
+             </div>
+             
+             <button id="closeSettingsBtn" class="btn btn-primary full-width">SAVE & CLOSE</button>
+          </div>
       </div>
 
       <!-- デバッグパネル -->

@@ -418,16 +418,15 @@ body {
   position: fixed;
   top: 0;
   left: 0;
-  width: 100%;
-  height: 100%;
-  background: rgba(0, 0, 0, 0.85);
+  width: 100vw;
+  height: 100vh;
+  background: var(--bg-primary); /* 不透明な背景にして「別の画面」感を出す */
   display: flex;
   justify-content: center;
-  align-items: flex-start; /* 上端から配置し、はみ出さないようにする */
-  overflow-y: auto; /* コンテンツが長い場合、オーバーレイ自体をスクロール可能にする */
-  padding: 40px 0; /* 上下に余裕を持たせる */
-  z-index: 200;
-  backdrop-filter: blur(5px);
+  align-items: flex-start; 
+  overflow-y: auto;
+  padding: 60px 20px; /* 上下に広い余白 */
+  z-index: 2000; /* 最前面 */
   transition: opacity var(--transition-normal);
 }
 .settings-panel.hidden {
