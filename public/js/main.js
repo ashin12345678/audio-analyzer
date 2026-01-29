@@ -539,9 +539,8 @@ class AudioAnalyzerApp {
   useFallbackFFT() {
     // JavaScriptフォールバック用の設定
     this.wasmReady = false;
-    this.binCount = 1024;
-    this.fftSize = 2048;
-    this.sampleRate = 48000;
+    // コンストラクタで設定した値を使用（上書きしない）
+    // this.fftSize と this.binCount は既に設定済み
 
     // 空のデータバッファを作成
     this.magnitudes = new Float32Array(this.binCount);
@@ -559,7 +558,7 @@ class AudioAnalyzerApp {
     // ピークホールド初期化
     this.peakHold.fill(-100);
 
-    console.log("Using JavaScript fallback for FFT");
+    console.log(`Using JavaScript fallback for FFT (Size: ${this.fftSize})`);
   }
 
   async start() {
