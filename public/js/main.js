@@ -157,160 +157,17 @@ class AudioAnalyzerApp {
     this.peakHoldMode = 'decay'; // decay, hold, off
     this.initialGain = 1.0;
     
-    // AGC設定
+    // 表示のスムージング
+    this.smoothingTimeConstant = 0.4;
+    
+    // AGC設定（調整済み - 無音時にゲインが上がりすぎないように）
     this.agcEnabled = false;
-    this.agcTargetDb = -20; // 目標レベル (-20dB)
-    this.agcMaxGain = 10.0; // 最大ゲイン (+20dB) - 十分に持ち上げられるように
-    this.agcMinGain = 0.1;  // 最小ゲイン (-20dB)
-    this.agcAttack = 0.01;  // 下げる時の速度
-    this.agcRelease = 0.002; // 上げる時の速度 (ゆっくり)
-    // agcSilenceThresholdは削除（微小入力でも上げる）
-
-    // コンポーネント
-    this.visualizer = null;
-    this.uiController = null;
-    
-    // ... (中略)
-
-  }
-
-  setWindowType(type) {
-      this.windowType = type;
-      // FFTインスタンスがあれば窓関数を再生成
-      if (this.fft) {
-          this.fft.setWindowType(type);
-      }
-      this.log(`Window: ${type}`, 'info');
-  }
-
-  setFFTSize(size) {
-      // (変更なし)
-      // ...
-      const validSizes = [2048, 4096, 8192, 16384];
-      if (!validSizes.includes(size)) {
-          this.log(`Invalid FFT size: ${size}`, 'error');
-          return;
-      }
-      
-      this.fftSize = size;
-      this.binCount = size / 2;
-      
-      this.magnitudes = new Float32Array(this.binCount);
-      this.magnitudes.fill(-100);
-      this.peakHold = new Float32Array(this.binCount);
-      this.peakHold.fill(-100);
-      this.timeDomain = new Float32Array(size); // Floatを使用
-      this.frequencies = new Float32Array(this.binCount);
-      
-      const binWidth = this.sampleRate / this.fftSize;
-      for (let i = 0; i < this.binCount; i++) {
-          this.frequencies[i] = i * binWidth;
-      }
-      
-      if (this.analyserNode) {
-          this.analyserNode.fftSize = size;
-      }
-      
-      if (this.fft) {
-          this.fft = new SimpleFFT(size);
-          this.fft.setWindowType(this.windowType);
-      }
-      
-      this.log(`FFT Size: ${size} (Bins: ${this.binCount}, Resolution: ${binWidth.toFixed(1)} Hz)`, 'info');
-  }
-
-  setResponseSpeed(smoothing) {
-      this.smoothingTimeConstant = smoothing; // プロパティは保持してもいいが使わないなら削除すべきだが、AnalyserNodeの設定として使う
-      if (this.analyserNode) {
-          this.analyserNode.smoothingTimeConstant = smoothing;
-      }
-      this.log(`Response Speed: ${smoothing}`, 'info');
-  }
-
-  // 自動ゲイン制御ロジック
-  updateAutoGain(currentRms) {
-      if (!this.agcEnabled || !this.gainNode) return;
-      if (currentRms < 0.000001) return; 
-
-      const currentDb = 20 * Math.log10(currentRms);
-      
-      // -80dB以下は完全に無視（フロアノイズを持ち上げないための最低限のガード）
-      if (currentDb < -80) return;
-
-      const currentGain = this.gainNode.gain.value;
-      const outputDb = currentDb + 20 * Math.log10(currentGain);
-
-      let diffDb = this.agcTargetDb - outputDb;
-      
-      // クリップ防止
-      if (outputDb > -1.0) {
-          diffDb = -5.0; // 強制的に下げる
-      }
-
-      // 調整量
-      let adjust = 0;
-      if (diffDb < 0) {
-          // 下げる (Attack)
-          adjust = diffDb * this.agcAttack;
-      } else {
-          // 上げる (Release)
-          adjust = diffDb * this.agcRelease;
-      }
-      
-      if (Math.abs(adjust) < 0.0001) return;
-
-      const newGainDb = 20 * Math.log10(currentGain) + adjust;
-      let newGain = Math.pow(10, newGainDb / 20);
-
-      newGain = Math.max(this.agcMinGain, Math.min(this.agcMaxGain, newGain));
-
-      if (Math.abs(newGain - currentGain) > 0.01) {
-          this.gainNode.gain.setTargetAtTime(newGain, this.audioContext.currentTime, 0.1);
-          if(this.uiController) {
-             this.uiController.updateGainDisplay(newGain);
-          }
-      }
-  }
-
-  processAnalyserData() {
-    if (this.isPaused) return;
-    
-    // AnalyserNodeからデータを取得（Float32Array）
-    const freqData = new Float32Array(this.analyserNode.frequencyBinCount);
-    this.analyserNode.getFloatFrequencyData(freqData);
-    
-    // TimeDomainデータもFloatで取得（RMS精度向上のため）
-    const timeData = new Float32Array(this.analyserNode.fftSize);
-    this.analyserNode.getFloatTimeDomainData(timeData);
-    
-    // AGC用RMS計算（高精度）
-    let sumSq = 0;
-    for (let i = 0; i < timeData.length; i++) {
-        const v = timeData[i]; // -1.0 ~ 1.0
-        sumSq += v * v;
-    }
-    const rms = Math.sqrt(sumSq / timeData.length);
-    this.updateAutoGain(rms);
-    
-    // 周波数データを処理
-    for (let i = 0; i < Math.min(freqData.length, this.binCount); i++) {
-      let db = freqData[i];
-      if (!isFinite(db)) db = -100;
-      
-      // 単純代入（ノイズゲート削除）
-      this.magnitudes[i] = db;
-
-      // ピークホールド更新
-      if (this.peakHoldMode !== 'off') {
-          this.updatePeakHold(i, this.magnitudes[i]);
-      }
-    }
-    
-    // 時間領域データをコピー
-    for (let i = 0; i < Math.min(timeData.length, this.fftSize); i++) {
-      this.timeDomain[i] = timeData[i];
-    }
-  }
+    this.agcTargetDb = -25; // 目標レベル（さらに控えめに）
+    this.agcMaxGain = 2.0; // 最大ゲイン (+6dB) - 制限を強化
+    this.agcMinGain = 0.5;  // 最小ゲイン (-6dB)
+    this.agcAttack = 0.01;  // 下げる時の速度（より遅く）
+    this.agcRelease = 0.001; // 上げる時の速度（非常に遅い）
+    this.agcSilenceThreshold = -50; // この値以下はAGCを適用しない（無音時のゲイン上昇防止）
 
     // コンポーネント
     this.visualizer = null;
@@ -485,10 +342,7 @@ class AudioAnalyzerApp {
       this.log(`FFT Size: ${size} (Bins: ${this.binCount}, Resolution: ${binWidth.toFixed(1)} Hz)`, 'info');
   }
 
-  setNoiseGate(dbValue) {
-      this.noiseGateDb = dbValue;
-      this.log(`Noise Gate: ${dbValue} dB`, 'info');
-  }
+
 
   setResponseSpeed(smoothing) {
       this.smoothingTimeConstant = smoothing;
@@ -1135,18 +989,6 @@ class AudioAnalyzerApp {
     const rms = Math.sqrt(sumSq / timeData.length);
     this.updateAutoGain(rms);
     
-    // ユーザー設定のノイズゲート
-    const userNoiseGate = this.noiseGateDb;
-    
-    // ヒステリシス（点滅防止）
-    const hysteresis = 3; 
-    
-    // スムージング
-    const smoothingUp = 0.5;   
-    const smoothingDown = 0.1; // 変更: 以前の実装と逆（0=保持、1=即時反映の場合）... 
-                               // AnalyserNodeのsmoothingがすでにあるため、
-                               // ここでは表示用の補助的なスムージングのみ行う
-
     // 周波数データを処理
     for (let i = 0; i < Math.min(freqData.length, this.binCount); i++) {
       let db = freqData[i];
@@ -1154,25 +996,13 @@ class AudioAnalyzerApp {
       // -Infinity等の処理
       if (!isFinite(db)) db = -100;
 
-      // AnalyserNodeのminDecibels未満などのクリッピング
-      // ノイズフロア設定以下ならカット
-      
       // 現在の表示値を取得
       const currentVal = this.magnitudes[i] || -100;
-      
-      // 単純なヒステリシス付きノイズゲート
-      const threshold = (currentVal > userNoiseGate) 
-          ? userNoiseGate - hysteresis 
-          : userNoiseGate;
-
-      if (db < threshold) {
-          db = -100;
-      }
       
       // 最終表示用バッファに格納（必要ならスムージング）
       // AnalyserNodeですでにsmoothingTimeConstantが効いているので
       // ここではスルーするか、単純代入で十分だが、
-      // ノイズゲートの切れ際をスムーズにするために簡易スムージングを入れる
+      // 表示の安定化のために簡易スムージングを入れる
       
       if (db > currentVal) {
           this.magnitudes[i] = db; // 上昇は即時（AnalyserNode依存）
