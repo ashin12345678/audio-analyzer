@@ -989,12 +989,21 @@ class AudioAnalyzerApp {
     const rms = Math.sqrt(sumSq / timeData.length);
     this.updateAutoGain(rms);
     
+    // キャリブレーションオフセット（dB）
+    // getFloatFrequencyDataは正確なdB値を返すが、視覚的に小さすぎるため
+    // 以前の挙動に近い見え方になるよう補正を加える。
+    // +30dB程度足すと、ノイズ(-90dB)が-60dB付近になり、信号(-60dB)が-30dB付近に来る。
+    const calibrationOffset = 30;
+
     // 周波数データを処理
     for (let i = 0; i < Math.min(freqData.length, this.binCount); i++) {
       let db = freqData[i];
       
       // -Infinity等の処理
       if (!isFinite(db)) db = -100;
+
+      // オフセット適用
+      db += calibrationOffset;
 
       // 現在の表示値を取得
       const currentVal = this.magnitudes[i] || -100;
