@@ -617,21 +617,27 @@ class AudioAnalyzerApp {
 
   async getMediaStream() {
       const audioSource = document.getElementById('audioSourceSelect').value;
-      const rawMode = document.getElementById('rawModeToggle') ? document.getElementById('rawModeToggle').checked : false;
+      // デフォルトでRaw Mode（処理なし）を推奨
+      // バンドオペレーションなどの音楽用途ではOSのエフェクトは有害
+      const rawMode = document.getElementById('rawModeToggle') ? document.getElementById('rawModeToggle').checked : true;
       
       let constraints = {
-          audio: audioSource ? { deviceId: { exact: audioSource } } : true
-      };
-
-      if (rawMode) {
-          this.log('Raw Mode: Disabling processing', 'warn');
-          constraints.audio = {
+          audio: {
               deviceId: audioSource ? { exact: audioSource } : undefined,
+              // 音楽用設定：これらをfalseにすることでOSの介入を防ぐ
               echoCancellation: false,
               noiseSuppression: false,
               autoGainControl: false,
-              googAudioSource: 9 
-          };
+              googAudioSource: 9 // 高音質入力
+          }
+      };
+
+      if (!rawMode) {
+          // 処理有効（会話用など）
+          this.log('Raw Mode: OFF (Processing enabled)', 'info');
+          constraints.audio = audioSource ? { deviceId: { exact: audioSource } } : true;
+      } else {
+          this.log('Raw Mode: ON (High fidelity)', 'info');
       }
 
       try {
