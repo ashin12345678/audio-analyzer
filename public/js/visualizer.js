@@ -14,7 +14,7 @@ export class Visualizer {
 
     // 描画設定
     this.minDB = -100;
-    this.maxDB = 0;
+    this.maxDB = 6; // +6dBまで表示可能
     this.minFreq = 20;
     this.maxFreq = 20000;
 
@@ -484,26 +484,43 @@ export class Visualizer {
 
     // dBグリッド（バーモードのみ）
     if (this.mode === "bar") {
-      const dbs = [-20, -40, -60, -80];
+      const dbs = [0, -20, -40, -60, -80];
 
       this.ctx.strokeStyle = "rgba(255, 255, 255, 0.15)";
       this.ctx.beginPath();
       for (const db of dbs) {
-        if (db < this.minDB) continue;
+        if (db < this.minDB || db > this.maxDB) continue;
         const y = this.dbToY(db);
         this.ctx.moveTo(0, y);
         this.ctx.lineTo(this.width, y);
       }
       this.ctx.stroke();
       
+      // 0dBライン（クリップ警告）を強調
+      const zeroY = this.dbToY(0);
+      this.ctx.strokeStyle = "rgba(255, 100, 100, 0.5)";
+      this.ctx.lineWidth = 2;
+      this.ctx.beginPath();
+      this.ctx.moveTo(0, zeroY);
+      this.ctx.lineTo(this.width, zeroY);
+      this.ctx.stroke();
+      this.ctx.lineWidth = 1;
+      
       // dBラベル
       this.ctx.textAlign = "left";
       this.ctx.fillStyle = "rgba(255, 255, 255, 0.7)";
       this.ctx.font = "12px 'Inter', sans-serif";
       for (const db of dbs) {
-        if (db < this.minDB) continue;
+        if (db < this.minDB || db > this.maxDB) continue;
         const y = this.dbToY(db);
-        this.ctx.fillText(`${db} dB`, 10, y - 5);
+        // 0dBは赤色で表示
+        if (db === 0) {
+          this.ctx.fillStyle = "rgba(255, 100, 100, 0.9)";
+          this.ctx.fillText("0 dB (CLIP)", 10, y - 5);
+          this.ctx.fillStyle = "rgba(255, 255, 255, 0.7)";
+        } else {
+          this.ctx.fillText(`${db} dB`, 10, y - 5);
+        }
       }
     }
   }

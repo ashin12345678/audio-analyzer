@@ -936,7 +936,7 @@ class AudioAnalyzerApp {
 
         // クランプ & NaNチェック
         if (!Number.isFinite(db)) db = -100;
-        db = Math.max(-100, Math.min(0, db));
+        db = Math.max(-100, Math.min(6, db)); // +6dBまで表示可能
 
         // スムージング
         let currentVal = this.magnitudes[i];
@@ -1035,7 +1035,7 @@ class AudioAnalyzerApp {
         targetDb = -100;
       } else {
         // ノイズゲート以上：実際の値を使用
-        targetDb = Math.max(-100, Math.min(0, db));
+        targetDb = Math.max(-100, Math.min(6, db)); // +6dBまで表示可能
       }
       
       // スムージング適用（上昇時は速く、下降時は遅く）
