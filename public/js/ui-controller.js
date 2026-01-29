@@ -141,6 +141,14 @@ export class UIController {
             });
         }
 
+        // High-Pass Filter
+        const highPassSelect = document.getElementById('highPassSelect');
+        if (highPassSelect) {
+            highPassSelect.addEventListener('change', (e) => {
+                this.app.setHighPassFreq(parseInt(e.target.value));
+            });
+        }
+
         // Response Speed (Smoothing)
         const responseSpeedSelect = document.getElementById('responseSpeedSelect');
         if (responseSpeedSelect) {

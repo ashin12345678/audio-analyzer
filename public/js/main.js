@@ -159,6 +159,7 @@ class AudioAnalyzerApp {
     
     // ノイズゲート設定（バンドオペレーション向け）
     this.noiseGateDb = -60; // この値以下の信号はカット
+    this.highPassFreq = 80; // ハイパスフィルター周波数（Hz）
     this.smoothingTimeConstant = 0.4; // 表示のスムージング
     
     // AGC設定（調整済み - 無音時にゲインが上がりすぎないように）
@@ -354,6 +355,11 @@ class AudioAnalyzerApp {
           this.analyserNode.smoothingTimeConstant = smoothing;
       }
       this.log(`Response Speed: ${smoothing}`, 'info');
+  }
+
+  setHighPassFreq(freq) {
+      this.highPassFreq = freq;
+      this.log(`High-Pass Filter: ${freq} Hz`, 'info');
   }
 
   // 自動ゲイン制御ロジック（バンドオペレーション向け改善版）
@@ -1000,6 +1006,10 @@ class AudioAnalyzerApp {
     const smoothingUp = 0.3;   // 上昇時は速く
     const smoothingDown = 0.85; // 下降時は遅く（点滅防止）
     
+    // ハイパスフィルター設定
+    const hpCutoff = this.highPassFreq; // カットオフ周波数
+    const hpTransition = hpCutoff * 1.5; // トランジション終了周波数
+    
     // 周波数データをdBに変換
     for (let i = 0; i < Math.min(freqData.length, this.binCount); i++) {
       const freq = i * binWidth;
@@ -1008,17 +1018,21 @@ class AudioAnalyzerApp {
       // dB変換
       let db = normalized > 0 ? 20 * Math.log10(normalized) : -100;
       
-      // 周波数に応じたノイズフロア（低周波は特に厳しく）
-      let noiseFloor;
-      if (freq < 40) {
-        noiseFloor = Math.max(userNoiseGate, -40);
-      } else if (freq < 80) {
-        noiseFloor = Math.max(userNoiseGate, -50);
-      } else if (freq < 150) {
-        noiseFloor = Math.max(userNoiseGate, -55);
-      } else {
-        noiseFloor = userNoiseGate;
+      // ハイパスフィルター（低周波カット）
+      if (hpCutoff > 0) {
+        if (freq < hpCutoff) {
+          // カットオフ未満は強制カット
+          db = -100;
+        } else if (freq < hpTransition) {
+          // トランジション帯域は徐々に減衰
+          const fadeRatio = (freq - hpCutoff) / (hpTransition - hpCutoff);
+          const cutAmount = (1 - fadeRatio) * 40; // 最大40dB減衰
+          db -= cutAmount;
+        }
       }
+      
+      // ノイズゲート適用（全周波数共通）
+      const noiseFloor = userNoiseGate;
       
       // 現在の表示値を取得
       const currentVal = this.magnitudes[i] || -100;
