@@ -159,7 +159,6 @@ class AudioAnalyzerApp {
     
     // ノイズゲート設定（バンドオペレーション向け）
     this.noiseGateDb = -60; // この値以下の信号はカット
-    this.highPassFreq = 80; // ハイパスフィルター周波数（Hz）
     this.smoothingTimeConstant = 0.4; // 表示のスムージング
     
     // AGC設定（調整済み - 無音時にゲインが上がりすぎないように）
@@ -355,11 +354,6 @@ class AudioAnalyzerApp {
           this.analyserNode.smoothingTimeConstant = smoothing;
       }
       this.log(`Response Speed: ${smoothing}`, 'info');
-  }
-
-  setHighPassFreq(freq) {
-      this.highPassFreq = freq;
-      this.log(`High-Pass Filter: ${freq} Hz`, 'info');
   }
 
   // 自動ゲイン制御ロジック（バンドオペレーション向け改善版）
@@ -982,9 +976,10 @@ class AudioAnalyzerApp {
   processAnalyserData() {
     if (this.isPaused) return;
     
-    // AnalyserNodeからデータを取得
-    const freqData = new Uint8Array(this.analyserNode.frequencyBinCount);
-    this.analyserNode.getByteFrequencyData(freqData);
+    // AnalyserNodeからデータを取得（Float32Arrayを使用）
+    // これにより、直接dB値（-Infinity 〜 maxDecibels）が取得できる
+    const freqData = new Float32Array(this.analyserNode.frequencyBinCount);
+    this.analyserNode.getFloatFrequencyData(freqData);
     
     const timeData = new Uint8Array(this.analyserNode.fftSize);
     this.analyserNode.getByteTimeDomainData(timeData);
@@ -998,78 +993,53 @@ class AudioAnalyzerApp {
     const rms = Math.sqrt(sumSq / timeData.length);
     this.updateAutoGain(rms);
     
-    // ビン幅の計算
-    const binWidth = this.sampleRate / this.fftSize;
-    
-    // ユーザー設定のノイズゲート（-60dBがデフォルト）
+    // ユーザー設定のノイズゲート
     const userNoiseGate = this.noiseGateDb;
     
-    // ヒステリシス（閾値を超えた後、この値だけ下がるまでゲートを開いたままにする）
-    const hysteresis = 6; // 6dBのヒステリシス
+    // ヒステリシス（点滅防止）
+    const hysteresis = 3; 
     
-    // スムージング係数（点滅防止用）
-    // 0に近いほど即応、1に近いほど滑らか
-    const smoothingUp = 0.3;   // 上昇時は速く
-    const smoothingDown = 0.85; // 下降時は遅く（点滅防止）
-    
-    // ハイパスフィルター設定
-    const hpCutoff = this.highPassFreq; // カットオフ周波数
-    const hpTransition = hpCutoff * 1.5; // トランジション終了周波数
-    
-    // 周波数データをdBに変換
+    // スムージング
+    const smoothingUp = 0.5;   
+    const smoothingDown = 0.1; // 変更: 以前の実装と逆（0=保持、1=即時反映の場合）... 
+                               // AnalyserNodeのsmoothingがすでにあるため、
+                               // ここでは表示用の補助的なスムージングのみ行う
+
+    // 周波数データを処理
     for (let i = 0; i < Math.min(freqData.length, this.binCount); i++) {
-      const freq = i * binWidth;
-      const normalized = freqData[i] / 255;
+      let db = freqData[i];
       
-      // dB変換
-      let db = normalized > 0 ? 20 * Math.log10(normalized) : -100;
-      
-      // ハイパスフィルター（低周波カット）
-      if (hpCutoff > 0) {
-        if (freq < hpCutoff) {
-          // カットオフ未満は強制カット
-          db = -100;
-        } else if (freq < hpTransition) {
-          // トランジション帯域は徐々に減衰
-          const fadeRatio = (freq - hpCutoff) / (hpTransition - hpCutoff);
-          const cutAmount = (1 - fadeRatio) * 40; // 最大40dB減衰
-          db -= cutAmount;
-        }
-      }
-      
-      // ノイズゲート適用（全周波数共通）
-      const noiseFloor = userNoiseGate;
+      // -Infinity等の処理
+      if (!isFinite(db)) db = -100;
+
+      // AnalyserNodeのminDecibels未満などのクリッピング
+      // ノイズフロア設定以下ならカット
       
       // 現在の表示値を取得
       const currentVal = this.magnitudes[i] || -100;
       
-      // ヒステリシス付きノイズゲート
-      // 閾値を超えていない場合でも、現在表示中なら hysteresis 分だけ余裕を持たせる
-      const effectiveThreshold = (currentVal > -100) 
-          ? noiseFloor - hysteresis  // 表示中は閾値を緩める
-          : noiseFloor;              // 非表示中は通常の閾値
-      
-      let targetDb;
-      if (db < effectiveThreshold) {
-        // ノイズゲート以下：-100dBへフェードアウト
-        targetDb = -100;
-      } else {
-        // ノイズゲート以上：実際の値を使用
-        targetDb = Math.max(-100, Math.min(6, db)); // +6dBまで表示可能
+      // 単純なヒステリシス付きノイズゲート
+      const threshold = (currentVal > userNoiseGate) 
+          ? userNoiseGate - hysteresis 
+          : userNoiseGate;
+
+      if (db < threshold) {
+          db = -100;
       }
       
-      // スムージング適用（上昇時は速く、下降時は遅く）
-      let newVal;
-      if (targetDb > currentVal) {
-        // 上昇時
-        newVal = currentVal + (targetDb - currentVal) * (1 - smoothingUp);
+      // 最終表示用バッファに格納（必要ならスムージング）
+      // AnalyserNodeですでにsmoothingTimeConstantが効いているので
+      // ここではスルーするか、単純代入で十分だが、
+      // ノイズゲートの切れ際をスムーズにするために簡易スムージングを入れる
+      
+      if (db > currentVal) {
+          this.magnitudes[i] = db; // 上昇は即時（AnalyserNode依存）
       } else {
-        // 下降時（点滅防止のため遅く）
-        newVal = currentVal + (targetDb - currentVal) * (1 - smoothingDown);
+          // 下降は少し粘る（視認性向上）
+          this.magnitudes[i] = currentVal * 0.8 + db * 0.2;
       }
-      
-      this.magnitudes[i] = newVal;
-      
+
+      // ピークホールド更新
       if (this.peakHoldMode !== 'off') {
           this.updatePeakHold(i, this.magnitudes[i]);
       }
