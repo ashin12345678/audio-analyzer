@@ -11,7 +11,7 @@
 #include <algorithm>
 
 // FFT設定
-constexpr int FFT_SIZE = 2048;
+constexpr int FFT_SIZE = 4096;
 constexpr int SAMPLE_RATE = 48000;
 constexpr float PI = 3.14159265358979323846f;
 constexpr float TWO_PI = 2.0f * PI;

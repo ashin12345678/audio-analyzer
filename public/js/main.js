@@ -150,22 +150,20 @@ class AudioAnalyzerApp {
     this.frequencies = null;
 
     // 設定
-    this.binCount = 1024;
+    this.binCount = 2048;
     this.sampleRate = 48000;
-    this.sampleRate = 48000;
-    this.sampleRate = 48000;
-    this.fftSize = 2048;
+    this.fftSize = 4096;
     this.windowType = 'hanning'; // rectangular, hanning, blackman
     this.peakHoldMode = 'decay'; // decay, hold, off
     this.initialGain = 1.0;
     
-    // AGC設定
+    // AGC設定（調整済み）
     this.agcEnabled = false;
-    this.agcTargetDb = -12; // 目標レベル
-    this.agcMaxGain = 10.0; // 最大ゲイン (+20dB)
-    this.agcMinGain = 0.1;  // 最小ゲイン (-20dB)
-    this.agcAttack = 0.05;  // 下げる時の速度 (速い)
-    this.agcRelease = 0.005; // 上げる時の速度 (遅い)
+    this.agcTargetDb = -20; // 目標レベル（控えめに設定）
+    this.agcMaxGain = 3.16; // 最大ゲイン (+10dB)
+    this.agcMinGain = 0.316;  // 最小ゲイン (-10dB)
+    this.agcAttack = 0.02;  // 下げる時の速度（オーバーシュート防止に遅めに）
+    this.agcRelease = 0.002; // 上げる時の速度 (遅い)
 
     // コンポーネント
     this.visualizer = null;

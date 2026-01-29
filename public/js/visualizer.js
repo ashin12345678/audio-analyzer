@@ -420,12 +420,6 @@ export class Visualizer {
   drawGrid() {
     const bottomY = this.height - this.paddingBottom;
 
-    this.ctx.strokeStyle = "rgba(255, 255, 255, 0.15)";
-    this.ctx.fillStyle = "rgba(255, 255, 255, 0.7)";
-    this.ctx.font = "11px 'Inter', sans-serif";
-    this.ctx.textAlign = "center";
-    this.ctx.lineWidth = 1;
-
     // 周波数グリッド
     let freqs;
     if (this.scale === "log") {
@@ -437,19 +431,27 @@ export class Visualizer {
       }
     }
 
+    // グリッド線を先に描画
+    this.ctx.strokeStyle = "rgba(255, 255, 255, 0.15)";
+    this.ctx.lineWidth = 1;
     this.ctx.beginPath();
-    let lastX = -100;
-
+    
     for (const freq of freqs) {
       if (freq < this.minFreq || freq > this.maxFreq) continue;
-
       const x = this.freqToX(freq, 1);
-
-      // グリッド線
       this.ctx.moveTo(x, 0);
       this.ctx.lineTo(x, bottomY);
+    }
+    this.ctx.stroke();
 
-      // ラベル表示（衝突回避）
+    // 周波数ラベルを別途描画
+    this.ctx.textAlign = "center";
+    let lastX = -100;
+    
+    for (const freq of freqs) {
+      if (freq < this.minFreq || freq > this.maxFreq) continue;
+      const x = this.freqToX(freq, 1);
+      
       // 主要周波数は優先表示
       const isMajor = freq === 100 || freq === 1000 || freq === 10000;
 
@@ -458,48 +460,51 @@ export class Visualizer {
         if (freq >= 1000) {
           label = freq / 1000 + "k";
         } else {
-          label = freq;
+          label = String(freq);
         }
 
         if (isMajor) {
           this.ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
-          this.ctx.font = "bold 12px 'Inter', sans-serif";
+          this.ctx.font = "bold 13px 'Inter', sans-serif";
         } else {
-          this.ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
-          this.ctx.font = "11px 'Inter', sans-serif";
+          this.ctx.fillStyle = "rgba(255, 255, 255, 0.6)";
+          this.ctx.font = "12px 'Inter', sans-serif";
         }
 
-        this.ctx.fillText(label, x, bottomY + 15);
+        this.ctx.fillText(label, x, bottomY + 20);
         lastX = x;
-
-        // Reset style
-        this.ctx.fillStyle = "rgba(255, 255, 255, 0.7)";
       }
     }
-    this.ctx.stroke();
 
     // 軸名表示（横軸中央に「Frequency (Hz)」を表示）
     this.ctx.textAlign = "center";
-    this.ctx.fillStyle = "rgba(255, 255, 255, 0.6)";
-    this.ctx.font = "12px 'Inter', sans-serif";
-    this.ctx.fillText("Frequency (Hz)", this.width / 2, bottomY + 35);
-    this.ctx.textAlign = "left";
+    this.ctx.fillStyle = "rgba(255, 255, 255, 0.7)";
+    this.ctx.font = "bold 14px 'Inter', sans-serif";
+    this.ctx.fillText("Frequency (Hz)", this.width / 2, bottomY + 45);
 
     // dBグリッド（バーモードのみ）
     if (this.mode === "bar") {
       const dbs = [-20, -40, -60, -80];
 
+      this.ctx.strokeStyle = "rgba(255, 255, 255, 0.15)";
       this.ctx.beginPath();
       for (const db of dbs) {
         if (db < this.minDB) continue;
         const y = this.dbToY(db);
-
         this.ctx.moveTo(0, y);
         this.ctx.lineTo(this.width, y);
-
-        this.ctx.fillText(`${db}`, 15, y - 3);
       }
       this.ctx.stroke();
+      
+      // dBラベル
+      this.ctx.textAlign = "left";
+      this.ctx.fillStyle = "rgba(255, 255, 255, 0.7)";
+      this.ctx.font = "12px 'Inter', sans-serif";
+      for (const db of dbs) {
+        if (db < this.minDB) continue;
+        const y = this.dbToY(db);
+        this.ctx.fillText(`${db} dB`, 10, y - 5);
+      }
     }
   }
 
