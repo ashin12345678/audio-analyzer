@@ -992,6 +992,14 @@ class AudioAnalyzerApp {
     // ユーザー設定のノイズゲート（-60dBがデフォルト）
     const userNoiseGate = this.noiseGateDb;
     
+    // ヒステリシス（閾値を超えた後、この値だけ下がるまでゲートを開いたままにする）
+    const hysteresis = 6; // 6dBのヒステリシス
+    
+    // スムージング係数（点滅防止用）
+    // 0に近いほど即応、1に近いほど滑らか
+    const smoothingUp = 0.3;   // 上昇時は速く
+    const smoothingDown = 0.85; // 下降時は遅く（点滅防止）
+    
     // 周波数データをdBに変換
     for (let i = 0; i < Math.min(freqData.length, this.binCount); i++) {
       const freq = i * binWidth;
@@ -1003,25 +1011,44 @@ class AudioAnalyzerApp {
       // 周波数に応じたノイズフロア（低周波は特に厳しく）
       let noiseFloor;
       if (freq < 40) {
-        // 40Hz未満はDCオフセットやメカノイズ - ユーザー設定より厳しく
         noiseFloor = Math.max(userNoiseGate, -40);
       } else if (freq < 80) {
-        // 40-80Hzは電源ノイズ帯域
         noiseFloor = Math.max(userNoiseGate, -50);
       } else if (freq < 150) {
-        // 80-150Hzは環境ノイズ
         noiseFloor = Math.max(userNoiseGate, -55);
       } else {
-        // それ以上はユーザー設定に従う
         noiseFloor = userNoiseGate;
       }
       
-      // ノイズゲート適用
-      if (db < noiseFloor) {
-        db = -100;
+      // 現在の表示値を取得
+      const currentVal = this.magnitudes[i] || -100;
+      
+      // ヒステリシス付きノイズゲート
+      // 閾値を超えていない場合でも、現在表示中なら hysteresis 分だけ余裕を持たせる
+      const effectiveThreshold = (currentVal > -100) 
+          ? noiseFloor - hysteresis  // 表示中は閾値を緩める
+          : noiseFloor;              // 非表示中は通常の閾値
+      
+      let targetDb;
+      if (db < effectiveThreshold) {
+        // ノイズゲート以下：-100dBへフェードアウト
+        targetDb = -100;
+      } else {
+        // ノイズゲート以上：実際の値を使用
+        targetDb = Math.max(-100, Math.min(0, db));
       }
       
-      this.magnitudes[i] = Math.max(-100, Math.min(0, db));
+      // スムージング適用（上昇時は速く、下降時は遅く）
+      let newVal;
+      if (targetDb > currentVal) {
+        // 上昇時
+        newVal = currentVal + (targetDb - currentVal) * (1 - smoothingUp);
+      } else {
+        // 下降時（点滅防止のため遅く）
+        newVal = currentVal + (targetDb - currentVal) * (1 - smoothingDown);
+      }
+      
+      this.magnitudes[i] = newVal;
       
       if (this.peakHoldMode !== 'off') {
           this.updatePeakHold(i, this.magnitudes[i]);
