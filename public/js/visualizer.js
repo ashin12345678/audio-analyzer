@@ -407,20 +407,17 @@ export class Visualizer {
       this.spectrogramData.data[idx + 3] = 255;
     }
 
-    // パディング領域を黒で塗りつぶし
-    const totalHeight = this.spectrogramData.height;
-    for (let y = height; y < totalHeight; y++) {
-      for (let x = 0; x < width; x++) {
-        const idx = (y * dataWidth + x) * 4;
-        this.spectrogramData.data[idx] = 10;
-        this.spectrogramData.data[idx + 1] = 10;
-        this.spectrogramData.data[idx + 2] = 15;
-        this.spectrogramData.data[idx + 3] = 255;
-      }
-    }
+    // パディング領域のデータが流れ込まないように、データ末尾（パディング境界）をリセットする必要はあるが、
+    // putImageDataの後にfillRectで上書きする方が効率的。
+    // ImageDataの下部には古いスペクトログラムが残るが、表示上書きされるので問題ない。
+    // パディング領域のクリアはImageData操作ではなくCanvas APIで行うためループ削除
 
     // 描画
     this.ctx.putImageData(this.spectrogramData, 0, 0);
+
+    // パディング領域（下部UIエリア）を背景色で塗りつぶして隠す
+    this.ctx.fillStyle = "#0a0a0f";
+    this.ctx.fillRect(0, height, this.width, this.paddingBottom);
   }
 
   drawGrid() {
