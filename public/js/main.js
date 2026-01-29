@@ -535,6 +535,10 @@ class AudioAnalyzerApp {
       if (this.audioContext.state === 'suspended') {
         await this.audioContext.resume();
       }
+      
+      // 実際のサンプルレートを取得（デバイスによって異なる場合がある）
+      this.sampleRate = this.audioContext.sampleRate;
+      this.log(`AudioContext SampleRate: ${this.sampleRate} Hz`, 'info');
   }
 
   async getMediaStream() {
@@ -641,6 +645,14 @@ class AudioAnalyzerApp {
   setupAnalyserNode(source) {
       this.analyserNode = this.audioContext.createAnalyser();
       this.analyserNode.fftSize = this.fftSize;
+      
+      // ダイナミックレンジを-100dBから0dBに設定
+      this.analyserNode.minDecibels = -100;
+      this.analyserNode.maxDecibels = 0;
+      
+      // スムージングを調整（0=即応、1=最大平滑化）
+      // 低すぎると点滅、高すぎると反応が遅い
+      this.analyserNode.smoothingTimeConstant = 0.4;
       
       source.connect(this.gainNode);
       this.gainNode.connect(this.analyserNode);
@@ -907,10 +919,36 @@ class AudioAnalyzerApp {
     const rms = Math.sqrt(sumSq / timeData.length);
     this.updateAutoGain(rms);
     
+    // ビン幅の計算（各ビンが何Hzを表すか）
+    const binWidth = this.sampleRate / this.fftSize;
+    
     // 周波数データをdBに変換
     for (let i = 0; i < Math.min(freqData.length, this.binCount); i++) {
+      const freq = i * binWidth;
       const normalized = freqData[i] / 255;
-      const db = normalized > 0 ? 20 * Math.log10(normalized) : -100;
+      
+      // dB変換（0の場合は-100dB）
+      let db = normalized > 0 ? 20 * Math.log10(normalized) : -100;
+      
+      // 低周波ノイズ対策：周波数に応じたノイズフロア
+      // 低周波（100Hz未満）は環境ノイズが多いため、閾値を高めに設定
+      let noiseFloor;
+      if (freq < 50) {
+        // 50Hz未満は通常DCオフセットやノイズなのでカット
+        noiseFloor = -50;
+      } else if (freq < 100) {
+        // 50-100Hzは環境ノイズが多い
+        noiseFloor = -70;
+      } else {
+        // それ以上は標準的なノイズフロア
+        noiseFloor = -95;
+      }
+      
+      // ノイズフロア以下はカット
+      if (db < noiseFloor) {
+        db = -100;
+      }
+      
       this.magnitudes[i] = Math.max(-100, Math.min(0, db));
       
       if (this.peakHoldMode !== 'off') {
@@ -964,14 +1002,8 @@ class AudioAnalyzerApp {
     this.visualizer.setScale(scale);
   }
 
-  setGain(gain) {
-    if (this.gainNode) {
-      this.gainNode.gain.value = gain;
-    }
-    if (this.wasmReady && this.wasmModule) {
-      this.wasmModule._set_gain(gain);
-    }
-  }
+  // setGain is defined at line 276 - removed duplicate
+  // ゲイン設定はAudioAnalyzerApp.setGain(value)を使用
 
   setShowPeakHold(show) {
     this.visualizer.setShowPeakHold(show);
