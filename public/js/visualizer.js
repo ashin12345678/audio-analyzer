@@ -213,7 +213,12 @@ export class Visualizer {
     this.ctx.fillStyle = "#0a0a0f";
     this.ctx.fillRect(0, 0, this.width, this.height);
 
-    const pointCount = Math.min(binCount, 512);
+    // ナイキスト周波数（これ以上の周波数にはデータがない）
+    const nyquist = sampleRate / 2;
+    const effectiveMaxFreq = Math.min(this.maxFreq, nyquist);
+    
+    // ポイント数を増やして高周波域の精度向上
+    const pointCount = Math.min(binCount, 1024);
     const bottomY = this.height - this.paddingBottom;
 
     // 折れ線グラフ用のグラデーション塗りつぶし
@@ -227,7 +232,8 @@ export class Visualizer {
       const binIndex = Math.floor((i * binCount) / pointCount);
       const freq = this.binToFreq(binIndex, binCount, sampleRate);
 
-      if (freq < this.minFreq || freq > this.maxFreq) continue;
+      // ナイキスト周波数を超えるデータは存在しない
+      if (freq < this.minFreq || freq > effectiveMaxFreq) continue;
 
       const x = this.freqToX(freq, binCount);
       const val = magnitudes[binIndex];
@@ -260,7 +266,7 @@ export class Visualizer {
       const binIndex = Math.floor((i * binCount) / pointCount);
       const freq = this.binToFreq(binIndex, binCount, sampleRate);
 
-      if (freq < this.minFreq || freq > this.maxFreq) continue;
+      if (freq < this.minFreq || freq > effectiveMaxFreq) continue;
 
       const x = this.freqToX(freq, binCount);
       const db = magnitudes[binIndex] || this.minDB;
@@ -289,7 +295,7 @@ export class Visualizer {
         const binIndex = Math.floor((i * binCount) / pointCount);
         const freq = this.binToFreq(binIndex, binCount, sampleRate);
 
-        if (freq < this.minFreq || freq > this.maxFreq) continue;
+        if (freq < this.minFreq || freq > effectiveMaxFreq) continue;
 
         const x = this.freqToX(freq, binCount);
         const peakDb =
