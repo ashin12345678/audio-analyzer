@@ -133,14 +133,6 @@ export class UIController {
             this.app.setWindowType(e.target.value);
         });
 
-        // Noise Gate
-        const noiseGateSelect = document.getElementById('noiseGateSelect');
-        if (noiseGateSelect) {
-            noiseGateSelect.addEventListener('change', (e) => {
-                this.app.setNoiseGate(parseInt(e.target.value));
-            });
-        }
-
         // Response Speed (Smoothing)
         const responseSpeedSelect = document.getElementById('responseSpeedSelect');
         if (responseSpeedSelect) {
