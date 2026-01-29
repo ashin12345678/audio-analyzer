@@ -133,6 +133,11 @@ export class Visualizer {
 
   setMode(mode) {
     this.mode = mode;
+    
+    // 背景をクリア（モード切り替え時の残像防止）
+    this.ctx.fillStyle = "#0a0a0f";
+    this.ctx.fillRect(0, 0, this.width, this.height);
+    
     if (mode === "spectrogram") {
       this.initSpectrogramData();
     }
