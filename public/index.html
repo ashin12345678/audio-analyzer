@@ -8,7 +8,10 @@
     />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta
+      name="apple-mobile-web-app-status-bar-style"
+      content="black-translucent"
+    />
     <meta name="screen-orientation" content="landscape" />
     <title>Audio Analyzer - リアルタイム音声解析</title>
     <meta
@@ -76,62 +79,119 @@
             <div class="gain-control-group">
               <div class="gain-label-row">
                 <label>GAIN (dB)</label>
-                <button id="agcBtn" class="btn-micro" title="Auto Gain Control">AGC: OFF</button>
+                <button id="agcBtn" class="btn-micro" title="Auto Gain Control">
+                  AGC: OFF
+                </button>
               </div>
               <div class="gain-inputs">
                 <button id="gainDownBtn" class="gain-btn">-</button>
-                <input type="number" id="gainInput" value="0.0" step="0.5" class="gain-number-input">
+                <input
+                  type="number"
+                  id="gainInput"
+                  value="0.0"
+                  step="0.5"
+                  class="gain-number-input"
+                />
                 <button id="gainUpBtn" class="gain-btn">+</button>
               </div>
               <!-- スライダー復活 -->
               <div class="gain-slider-container">
-                <input type="range" id="gainSlider" min="-20" max="20" step="0.5" value="0" />
+                <input
+                  type="range"
+                  id="gainSlider"
+                  min="-20"
+                  max="20"
+                  step="0.5"
+                  value="0"
+                />
               </div>
             </div>
 
             <!-- 詳細設定ポップオーバー (ボタン) -->
-            <button id="settingsBtn" class="btn btn-secondary btn-icon-only" title="Settings">
-               <span>⚙️</span>
+            <button
+              id="settingsBtn"
+              class="btn btn-secondary btn-icon-only"
+              title="Settings"
+            >
+              <span>⚙️</span>
             </button>
           </div>
         </div>
-
-      </div><!-- /#controls -->
+      </div>
+      <!-- /#controls -->
 
       <!-- 詳細設定パネル (全画面オーバーレイ) -->
       <div id="settingsPanel" class="settings-panel hidden">
-          <div class="settings-content">
-             <h3>Analyzer Settings</h3>
-             
-             <div class="setting-item">
-               <label>Window Function</label>
-               <select id="windowFunctionSelect">
-                 <option value="hanning" selected>Hanning (Standard)</option>
-                 <option value="blackman">Blackman-Harris (High Res)</option>
-                 <option value="rectangular">Rectangular (None)</option>
-               </select>
-             </div>
+        <div class="settings-content">
+          <h3>Analyzer Settings</h3>
 
-             <div class="setting-item">
-               <label>Peak Hold Mode</label>
-               <select id="peakModeSelect">
-                 <option value="decay" selected>Auto Decay (3s)</option>
-                 <option value="hold">Infinity Hold</option>
-                 <option value="off">Off</option>
-               </select>
-               <button id="resetPeakBtn" class="btn btn-small">RESET NOW</button>
-             </div>
-             
-             <button id="closeSettingsBtn" class="btn btn-primary full-width">SAVE & CLOSE</button>
+          <div class="setting-item">
+            <label>FFT Size (Resolution)</label>
+            <select id="fftSizeSelect">
+              <option value="2048">2048 (Fast)</option>
+              <option value="4096" selected>4096 (Standard)</option>
+              <option value="8192">8192 (High Res)</option>
+              <option value="16384">16384 (Maximum)</option>
+            </select>
           </div>
+
+          <div class="setting-item">
+            <label>Window Function</label>
+            <select id="windowFunctionSelect">
+              <option value="hanning" selected>Hanning (Standard)</option>
+              <option value="blackman">Blackman-Harris (High Res)</option>
+              <option value="rectangular">Rectangular (None)</option>
+            </select>
+          </div>
+
+          <div class="setting-item">
+            <label>Peak Hold Mode</label>
+            <select id="peakModeSelect">
+              <option value="decay" selected>Auto Decay (3s)</option>
+              <option value="hold">Infinity Hold</option>
+              <option value="off">Off</option>
+            </select>
+            <button id="resetPeakBtn" class="btn btn-small">RESET NOW</button>
+          </div>
+
+          <div class="setting-item">
+            <label>Noise Gate (dB)</label>
+            <select id="noiseGateSelect">
+              <option value="-80">-80 dB (Sensitive)</option>
+              <option value="-60" selected>-60 dB (Standard)</option>
+              <option value="-50">-50 dB (Live/PA)</option>
+              <option value="-40">-40 dB (Loud Environment)</option>
+            </select>
+          </div>
+
+          <div class="setting-item">
+            <label>Response Speed</label>
+            <select id="responseSpeedSelect">
+              <option value="0.2">Fast (Live)</option>
+              <option value="0.4" selected>Medium</option>
+              <option value="0.6">Slow (Smooth)</option>
+              <option value="0.8">Very Slow (Average)</option>
+            </select>
+          </div>
+
+          <button id="closeSettingsBtn" class="btn btn-primary full-width">
+            SAVE & CLOSE
+          </button>
+        </div>
       </div>
 
       <!-- デバッグパネル -->
-      <div id="debugPanel" class="debug-panel" style="display:none;">
+      <div id="debugPanel" class="debug-panel" style="display: none">
         <div class="debug-header">
           <span>Debug Log</span>
           <div class="debug-controls">
-            <button id="resumeBtn" class="debug-btn" style="background:var(--success);color:white;">Resume</button>
+            <button
+              id="resumeBtn"
+              class="debug-btn"
+              style="background: var(--success); color: white"
+            >
+              Resume
+            </button>
             <button id="copyLogBtn" class="debug-btn">Copy</button>
             <button id="testToneBtn" class="debug-btn">Test Tone</button>
             <button id="clearDebugBtn" class="debug-clear">Clear</button>
@@ -143,7 +203,8 @@
           </select>
           <div class="debug-checkbox-row">
             <label>
-              <input type="checkbox" id="rawModeToggle"> Raw Mode (Disable processing)
+              <input type="checkbox" id="rawModeToggle" /> Raw Mode (Disable
+              processing)
             </label>
           </div>
         </div>

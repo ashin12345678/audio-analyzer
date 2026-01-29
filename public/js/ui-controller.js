@@ -120,15 +120,36 @@ export class UIController {
             document.getElementById('settingsPanel').classList.add('hidden');
         });
 
+        // FFT Size
+        const fftSizeSelect = document.getElementById('fftSizeSelect');
+        if (fftSizeSelect) {
+            fftSizeSelect.addEventListener('change', (e) => {
+                this.app.setFFTSize(parseInt(e.target.value));
+            });
+        }
+
         // Window Function
         document.getElementById('windowFunctionSelect').addEventListener('change', (e) => {
             this.app.setWindowType(e.target.value);
         });
 
-        // Peak Hold Mode (Toggleは廃止されSelectへ、しかしToggleがまだ残ってる場合は互換維持)
-        // 今回の要件ではSelectが主。ToggleはUIから消えた（CSS/HTMLで置換済み）が、
-        // 古いResetボタンなどがまだあるかもしれない。
-        
+        // Noise Gate
+        const noiseGateSelect = document.getElementById('noiseGateSelect');
+        if (noiseGateSelect) {
+            noiseGateSelect.addEventListener('change', (e) => {
+                this.app.setNoiseGate(parseInt(e.target.value));
+            });
+        }
+
+        // Response Speed (Smoothing)
+        const responseSpeedSelect = document.getElementById('responseSpeedSelect');
+        if (responseSpeedSelect) {
+            responseSpeedSelect.addEventListener('change', (e) => {
+                this.app.setResponseSpeed(parseFloat(e.target.value));
+            });
+        }
+
+        // Peak Hold Mode
         // Reset Peak (Main + Settings Panel)
         const resetBtns = document.querySelectorAll('#resetPeakBtn');
         resetBtns.forEach(btn => {

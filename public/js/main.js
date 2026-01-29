@@ -157,13 +157,18 @@ class AudioAnalyzerApp {
     this.peakHoldMode = 'decay'; // decay, hold, off
     this.initialGain = 1.0;
     
-    // AGC設定（調整済み）
+    // ノイズゲート設定（バンドオペレーション向け）
+    this.noiseGateDb = -60; // この値以下の信号はカット
+    this.smoothingTimeConstant = 0.4; // 表示のスムージング
+    
+    // AGC設定（調整済み - 無音時にゲインが上がりすぎないように）
     this.agcEnabled = false;
-    this.agcTargetDb = -20; // 目標レベル（控えめに設定）
-    this.agcMaxGain = 3.16; // 最大ゲイン (+10dB)
-    this.agcMinGain = 0.316;  // 最小ゲイン (-10dB)
-    this.agcAttack = 0.02;  // 下げる時の速度（オーバーシュート防止に遅めに）
-    this.agcRelease = 0.002; // 上げる時の速度 (遅い)
+    this.agcTargetDb = -25; // 目標レベル（さらに控えめに）
+    this.agcMaxGain = 2.0; // 最大ゲイン (+6dB) - 制限を強化
+    this.agcMinGain = 0.5;  // 最小ゲイン (-6dB)
+    this.agcAttack = 0.01;  // 下げる時の速度（より遅く）
+    this.agcRelease = 0.001; // 上げる時の速度（非常に遅い）
+    this.agcSilenceThreshold = -50; // この値以下はAGCを適用しない（無音時のゲイン上昇防止）
 
     // コンポーネント
     this.visualizer = null;
@@ -299,33 +304,100 @@ class AudioAnalyzerApp {
       this.log(`Window: ${type}`, 'info');
   }
 
-  // 自動ゲイン制御ロジック
+  setFFTSize(size) {
+      // 有効なサイズかチェック
+      const validSizes = [2048, 4096, 8192, 16384];
+      if (!validSizes.includes(size)) {
+          this.log(`Invalid FFT size: ${size}`, 'error');
+          return;
+      }
+      
+      this.fftSize = size;
+      this.binCount = size / 2;
+      
+      // バッファを再作成
+      this.magnitudes = new Float32Array(this.binCount);
+      this.magnitudes.fill(-100);
+      this.peakHold = new Float32Array(this.binCount);
+      this.peakHold.fill(-100);
+      this.timeDomain = new Float32Array(size);
+      this.frequencies = new Float32Array(this.binCount);
+      
+      // 周波数テーブル再計算
+      const binWidth = this.sampleRate / this.fftSize;
+      for (let i = 0; i < this.binCount; i++) {
+          this.frequencies[i] = i * binWidth;
+      }
+      
+      // AnalyserNodeがあれば更新
+      if (this.analyserNode) {
+          this.analyserNode.fftSize = size;
+      }
+      
+      // FFTインスタンスがあれば再作成
+      if (this.fft) {
+          this.fft = new SimpleFFT(size);
+          this.fft.setWindowType(this.windowType);
+      }
+      
+      this.log(`FFT Size: ${size} (Bins: ${this.binCount}, Resolution: ${binWidth.toFixed(1)} Hz)`, 'info');
+  }
+
+  setNoiseGate(dbValue) {
+      this.noiseGateDb = dbValue;
+      this.log(`Noise Gate: ${dbValue} dB`, 'info');
+  }
+
+  setResponseSpeed(smoothing) {
+      this.smoothingTimeConstant = smoothing;
+      if (this.analyserNode) {
+          this.analyserNode.smoothingTimeConstant = smoothing;
+      }
+      this.log(`Response Speed: ${smoothing}`, 'info');
+  }
+
+  // 自動ゲイン制御ロジック（バンドオペレーション向け改善版）
   updateAutoGain(currentRms) {
       if (!this.agcEnabled || !this.gainNode) return;
-      if (currentRms < 0.000001) return; // 無音時は無視
+      if (currentRms < 0.000001) return; // 完全な無音時は無視
 
       const currentDb = 20 * Math.log10(currentRms);
-      // Main Gainの影響を含めた出力レベルを推定 (InputRMS * Gain)
-      // ただし、this.gainNode.gain.value は現在適用中のゲイン
       const currentGain = this.gainNode.gain.value;
       const outputDb = currentDb + 20 * Math.log10(currentGain);
+
+      // 無音/ノイズ時はゲインを上げない（重要：ノイズ増幅防止）
+      if (currentDb < this.agcSilenceThreshold) {
+          // 信号が弱すぎる場合、ゲインを1.0に近づけるだけ（上げすぎない）
+          if (currentGain > 1.0) {
+              const newGain = currentGain * 0.99; // ゆっくり下げる
+              this.gainNode.gain.setTargetAtTime(
+                  Math.max(1.0, newGain), 
+                  this.audioContext.currentTime, 
+                  0.2
+              );
+          }
+          return;
+      }
 
       let diffDb = this.agcTargetDb - outputDb;
       
       // クリップ防止（過大入力は即座に下げる）
-      if (outputDb > -1.0) {
-          diffDb = -5.0; // 強制的に下げる
+      if (outputDb > -3.0) {
+          diffDb = -3.0; // 強制的に下げる
       }
 
-      // 調整量
+      // 調整量（信号があるときのみ適用）
       let adjust = 0;
       if (diffDb < 0) {
-          // 下げる (Attack)
+          // 下げる (Attack) - 速めに
           adjust = diffDb * this.agcAttack;
-      } else {
-          // 上げる (Release)
+      } else if (diffDb > 3) {
+          // 上げる (Release) - 3dB以上の差があるときだけ、非常にゆっくり
           adjust = diffDb * this.agcRelease;
       }
+      // 3dB以内の差は無視（安定性向上）
+
+      if (Math.abs(adjust) < 0.001) return;
 
       // 新しいゲインを計算
       const newGainDb = 20 * Math.log10(currentGain) + adjust;
@@ -334,10 +406,9 @@ class AudioAnalyzerApp {
       // リミット
       newGain = Math.max(this.agcMinGain, Math.min(this.agcMaxGain, newGain));
 
-      // 適用
-      if (Math.abs(newGain - currentGain) > 0.01) {
-          this.gainNode.gain.setTargetAtTime(newGain, this.audioContext.currentTime, 0.1);
-          // UI反映 (頻度を下げるために変化が大きい時だけ呼ぶのが理想だが、ここでは常時)
+      // 適用（変化が小さすぎる場合はスキップ）
+      if (Math.abs(newGain - currentGain) > 0.02) {
+          this.gainNode.gain.setTargetAtTime(newGain, this.audioContext.currentTime, 0.15);
           if(this.uiController) {
              this.uiController.updateGainDisplay(newGain);
           }
@@ -908,41 +979,45 @@ class AudioAnalyzerApp {
     this.analyserNode.getByteTimeDomainData(timeData);
     
     // AGC用RMS計算（TimeDomainデータから）
-    // AnalyserNodeのTimeDomainDataは 0-255 (128が中心)
     let sumSq = 0;
     for (let i = 0; i < timeData.length; i++) {
-        const v = (timeData[i] - 128) / 128; // -1.0 ~ 1.0
+        const v = (timeData[i] - 128) / 128;
         sumSq += v * v;
     }
     const rms = Math.sqrt(sumSq / timeData.length);
     this.updateAutoGain(rms);
     
-    // ビン幅の計算（各ビンが何Hzを表すか）
+    // ビン幅の計算
     const binWidth = this.sampleRate / this.fftSize;
+    
+    // ユーザー設定のノイズゲート（-60dBがデフォルト）
+    const userNoiseGate = this.noiseGateDb;
     
     // 周波数データをdBに変換
     for (let i = 0; i < Math.min(freqData.length, this.binCount); i++) {
       const freq = i * binWidth;
       const normalized = freqData[i] / 255;
       
-      // dB変換（0の場合は-100dB）
+      // dB変換
       let db = normalized > 0 ? 20 * Math.log10(normalized) : -100;
       
-      // 低周波ノイズ対策：周波数に応じたノイズフロア
-      // 低周波（100Hz未満）は環境ノイズが多いため、閾値を高めに設定
+      // 周波数に応じたノイズフロア（低周波は特に厳しく）
       let noiseFloor;
-      if (freq < 50) {
-        // 50Hz未満は通常DCオフセットやノイズなのでカット
-        noiseFloor = -50;
-      } else if (freq < 100) {
-        // 50-100Hzは環境ノイズが多い
-        noiseFloor = -70;
+      if (freq < 40) {
+        // 40Hz未満はDCオフセットやメカノイズ - ユーザー設定より厳しく
+        noiseFloor = Math.max(userNoiseGate, -40);
+      } else if (freq < 80) {
+        // 40-80Hzは電源ノイズ帯域
+        noiseFloor = Math.max(userNoiseGate, -50);
+      } else if (freq < 150) {
+        // 80-150Hzは環境ノイズ
+        noiseFloor = Math.max(userNoiseGate, -55);
       } else {
-        // それ以上は標準的なノイズフロア
-        noiseFloor = -95;
+        // それ以上はユーザー設定に従う
+        noiseFloor = userNoiseGate;
       }
       
-      // ノイズフロア以下はカット
+      // ノイズゲート適用
       if (db < noiseFloor) {
         db = -100;
       }
