@@ -17,7 +17,7 @@ export class Visualizer {
     this.maxDB = 0;
     this.minFreq = 20;
     this.maxFreq = 20000;
-    
+
     // レイアウト
     // レイアウト
     this.paddingBottom = 100; // UIと被らないように余白を広げる
@@ -215,14 +215,14 @@ export class Visualizer {
 
     const pointCount = Math.min(binCount, 512);
     const bottomY = this.height - this.paddingBottom;
-    
+
     // 折れ線グラフ用のグラデーション塗りつぶし
     this.ctx.beginPath();
     this.ctx.moveTo(0, bottomY);
-    
+
     let firstX = 0;
     let started = false;
-    
+
     for (let i = 0; i < pointCount; i++) {
       const binIndex = Math.floor((i * binCount) / pointCount);
       const freq = this.binToFreq(binIndex, binCount, sampleRate);
@@ -231,7 +231,7 @@ export class Visualizer {
 
       const x = this.freqToX(freq, binCount);
       const val = magnitudes[binIndex];
-      const db = (val !== undefined) ? val : this.minDB;
+      const db = val !== undefined ? val : this.minDB;
       const y = this.dbToY(db);
 
       if (!started) {
@@ -243,7 +243,7 @@ export class Visualizer {
         this.ctx.lineTo(x, y);
       }
     }
-    
+
     // 塗りつぶしを閉じる
     this.ctx.lineTo(this.width, bottomY);
     this.ctx.closePath();
@@ -251,11 +251,11 @@ export class Visualizer {
     this.ctx.globalAlpha = 0.3;
     this.ctx.fill();
     this.ctx.globalAlpha = 1.0;
-    
+
     // メインの折れ線を描画
     this.ctx.beginPath();
     started = false;
-    
+
     for (let i = 0; i < pointCount; i++) {
       const binIndex = Math.floor((i * binCount) / pointCount);
       const freq = this.binToFreq(binIndex, binCount, sampleRate);
@@ -273,7 +273,7 @@ export class Visualizer {
         this.ctx.lineTo(x, y);
       }
     }
-    
+
     this.ctx.strokeStyle = "#00d4ff";
     this.ctx.lineWidth = 2;
     this.ctx.stroke();
@@ -292,7 +292,8 @@ export class Visualizer {
         if (freq < this.minFreq || freq > this.maxFreq) continue;
 
         const x = this.freqToX(freq, binCount);
-        const peakDb = (peakHold[binIndex] !== undefined) ? peakHold[binIndex] : this.minDB;
+        const peakDb =
+          peakHold[binIndex] !== undefined ? peakHold[binIndex] : this.minDB;
         const y = this.dbToY(peakDb);
 
         if (!started) {
@@ -357,16 +358,16 @@ export class Visualizer {
     // 高速化: copyWithinを使ってメモリ内でシフト
     // 下から上へ、あるいは上から下へ。
     // ここでは新しいデータが y=0 (上) に書き込まれ、古いデータは下へ流れる (y+1) とする。
-    
+
     // 全体を1行分下へコピー (0行目〜height-2行目 を 1行目〜height-1行目 へ)
     // copyWithin(target, start, end)
     // target: コピー先開始インデックス (1行目 = width * 4)
     // start: コピー元開始インデックス (0)
     // end: コピー元終了インデックス (全サイズ - 1行分)
-    
+
     const rowSize = width * 4;
     const totalSize = this.spectrogramData.data.length;
-    
+
     // Uint8ClampedArray.copyWithin は高速
     this.spectrogramData.data.copyWithin(rowSize, 0, totalSize - rowSize);
 
@@ -384,11 +385,13 @@ export class Visualizer {
 
       const binIndex = Math.floor((freq * binCount * 2) / sampleRate);
       const val = magnitudes[Math.min(binIndex, binCount - 1)];
-      const db = (val !== undefined) ? val : this.minDB;
+      const db = val !== undefined ? val : this.minDB;
 
       // dBを0-255にマップ
       const normalized = (db - this.minDB) / (this.maxDB - this.minDB);
-      const colorIndex = Math.floor(Math.max(0, Math.min(255, normalized * 255)));
+      const colorIndex = Math.floor(
+        Math.max(0, Math.min(255, normalized * 255)),
+      );
       const [r, g, b] = this.spectrogramColors[colorIndex];
 
       const idx = x * 4;
@@ -397,17 +400,17 @@ export class Visualizer {
       this.spectrogramData.data[idx + 2] = b;
       this.spectrogramData.data[idx + 3] = 255;
     }
-    
+
     // パディング領域を黒で塗りつぶし
     const totalHeight = this.spectrogramData.height;
     for (let y = height; y < totalHeight; y++) {
-         for (let x = 0; x < width; x++) {
-             const idx = (y * dataWidth + x) * 4;
-             this.spectrogramData.data[idx] = 10;
-             this.spectrogramData.data[idx+1] = 10;
-             this.spectrogramData.data[idx+2] = 15;
-             this.spectrogramData.data[idx+3] = 255;
-         }
+      for (let x = 0; x < width; x++) {
+        const idx = (y * dataWidth + x) * 4;
+        this.spectrogramData.data[idx] = 10;
+        this.spectrogramData.data[idx + 1] = 10;
+        this.spectrogramData.data[idx + 2] = 15;
+        this.spectrogramData.data[idx + 3] = 255;
+      }
     }
 
     // 描画
@@ -416,7 +419,7 @@ export class Visualizer {
 
   drawGrid() {
     const bottomY = this.height - this.paddingBottom;
-    
+
     this.ctx.strokeStyle = "rgba(255, 255, 255, 0.15)";
     this.ctx.fillStyle = "rgba(255, 255, 255, 0.7)";
     this.ctx.font = "11px 'Inter', sans-serif";
@@ -425,13 +428,13 @@ export class Visualizer {
 
     // 周波数グリッド
     let freqs;
-    if (this.scale === 'log') {
-       freqs = [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000];
+    if (this.scale === "log") {
+      freqs = [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000];
     } else {
-       freqs = [];
-       for(let f=0; f<=this.maxFreq; f+=2000) {
-         if(f>0) freqs.push(f);
-       }
+      freqs = [];
+      for (let f = 0; f <= this.maxFreq; f += 2000) {
+        if (f > 0) freqs.push(f);
+      }
     }
 
     this.ctx.beginPath();
@@ -441,50 +444,51 @@ export class Visualizer {
       if (freq < this.minFreq || freq > this.maxFreq) continue;
 
       const x = this.freqToX(freq, 1);
-      
+
       // グリッド線
       this.ctx.moveTo(x, 0);
-      this.ctx.lineTo(x, bottomY); 
+      this.ctx.lineTo(x, bottomY);
 
       // ラベル表示（衝突回避）
       // 主要周波数は優先表示
-      const isMajor = (freq === 100 || freq === 1000 || freq === 10000);
-      
-      if (x - lastX > 30 || isMajor) {
-          let label;
-          if (freq >= 1000) {
-            label = (freq / 1000) + "k";
-          } else {
-            label = freq;
-          }
-          
-          if (isMajor) {
-              this.ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
-              this.ctx.font = "bold 12px 'Inter', sans-serif";
-          } else {
-              this.ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
-              this.ctx.font = "11px 'Inter', sans-serif";
-          }
+      const isMajor = freq === 100 || freq === 1000 || freq === 10000;
 
-          this.ctx.fillText(label, x, bottomY + 15);
-          lastX = x;
-          
-          // Reset style
-          this.ctx.fillStyle = "rgba(255, 255, 255, 0.7)";
+      if (x - lastX > 30 || isMajor) {
+        let label;
+        if (freq >= 1000) {
+          label = freq / 1000 + "k";
+        } else {
+          label = freq;
+        }
+
+        if (isMajor) {
+          this.ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
+          this.ctx.font = "bold 12px 'Inter', sans-serif";
+        } else {
+          this.ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
+          this.ctx.font = "11px 'Inter', sans-serif";
+        }
+
+        this.ctx.fillText(label, x, bottomY + 15);
+        lastX = x;
+
+        // Reset style
+        this.ctx.fillStyle = "rgba(255, 255, 255, 0.7)";
       }
     }
     this.ctx.stroke();
 
-    // 軸名表示
-    this.ctx.textAlign = "right";
-    this.ctx.fillStyle = "rgba(255, 255, 255, 0.4)";
-    this.ctx.fillText("Hz", this.width - 5, this.height - 8);
+    // 軸名表示（横軸中央に「Frequency (Hz)」を表示）
+    this.ctx.textAlign = "center";
+    this.ctx.fillStyle = "rgba(255, 255, 255, 0.6)";
+    this.ctx.font = "12px 'Inter', sans-serif";
+    this.ctx.fillText("Frequency (Hz)", this.width / 2, bottomY + 35);
     this.ctx.textAlign = "left";
 
     // dBグリッド（バーモードのみ）
     if (this.mode === "bar") {
       const dbs = [-20, -40, -60, -80];
-      
+
       this.ctx.beginPath();
       for (const db of dbs) {
         if (db < this.minDB) continue;
@@ -492,7 +496,7 @@ export class Visualizer {
 
         this.ctx.moveTo(0, y);
         this.ctx.lineTo(this.width, y);
-        
+
         this.ctx.fillText(`${db}`, 15, y - 3);
       }
       this.ctx.stroke();
@@ -514,7 +518,7 @@ export class Visualizer {
 
     const binIndex = Math.floor((freq * binCount * 2) / sampleRate);
     const val = magnitudes[Math.min(binIndex, binCount - 1)];
-    const db = (val !== undefined) ? val : this.minDB;
+    const db = val !== undefined ? val : this.minDB;
 
     return { frequency: freq, db: db };
   }
